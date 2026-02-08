@@ -60,8 +60,9 @@ def browse_website(url: str, action: str, tool_context: ToolContext) -> str:
             if on_status:
                 on_status("Starting browser...")
             browser = NovaAct(
-                api_key=NOVA_ACT_API_KEY,
                 starting_page=url,
+                nova_act_api_key=NOVA_ACT_API_KEY,
+                headless=True,
             )
             browser.start()
             with _browsers_lock:
