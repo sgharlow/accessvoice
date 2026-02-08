@@ -77,7 +77,7 @@ def browse_website(url: str, action: str, tool_context: ToolContext) -> str:
                 b = NovaAct(
                     starting_page=url,
                     nova_act_api_key=NOVA_ACT_API_KEY,
-                    headless=True,
+                    headless=False,
                 )
                 b.start()
                 return b
