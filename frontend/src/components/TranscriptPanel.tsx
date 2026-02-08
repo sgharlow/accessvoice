@@ -28,7 +28,7 @@ export default function TranscriptPanel({ transcripts }: TranscriptPanelProps) {
           <div
             key={i}
             className={`transcript-entry transcript-${entry.role}`}
-            role="listitem"
+            role="article"
           >
             <span className="transcript-role" aria-hidden="true">
               {entry.role === "user"

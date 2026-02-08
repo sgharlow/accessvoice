@@ -2,6 +2,7 @@
 
 import base64
 import logging
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 
@@ -14,6 +15,7 @@ logger = logging.getLogger("accessvoice.tools.browse")
 
 # Per-session browser instances (managed by session_manager)
 _browsers: dict[str, object] = {}
+_browsers_lock = threading.Lock()
 
 # Timeout for a single Nova Act step (seconds)
 _ACT_STEP_TIMEOUT = 60
@@ -52,7 +54,8 @@ def browse_website(url: str, action: str, tool_context: ToolContext) -> str:
         from nova_act import NovaAct
 
         # Get or create browser for this session
-        browser = _browsers.get(session_id)
+        with _browsers_lock:
+            browser = _browsers.get(session_id)
         if browser is None:
             if on_status:
                 on_status("Starting browser...")
@@ -61,7 +64,8 @@ def browse_website(url: str, action: str, tool_context: ToolContext) -> str:
                 starting_page=url,
             )
             browser.start()
-            _browsers[session_id] = browser
+            with _browsers_lock:
+                _browsers[session_id] = browser
         else:
             # Navigate to new URL if different
             try:
@@ -185,7 +189,8 @@ def _friendly_error(e: Exception) -> str:
 
 def cleanup_browser(session_id: str) -> None:
     """Close and clean up a browser session."""
-    browser = _browsers.pop(session_id, None)
+    with _browsers_lock:
+        browser = _browsers.pop(session_id, None)
     if browser:
         try:
             browser.stop()
