@@ -32,7 +32,7 @@ def navigate_back(tool_context: ToolContext) -> str:
             return "No browser session is active. Please ask me to navigate to a website first."
 
         try:
-            result = _run_on_session_thread(
+            _run_on_session_thread(
                 session_id,
                 lambda: browser.act("Go back to the previous page", max_steps=2),
                 timeout_sec=30,
@@ -41,7 +41,7 @@ def navigate_back(tool_context: ToolContext) -> str:
             logger.warning("Navigate back timed out, retrying")
             if on_status:
                 on_status("Taking a moment, trying again...")
-            result = _run_on_session_thread(
+            _run_on_session_thread(
                 session_id,
                 lambda: browser.act("Click the browser back button", max_steps=2),
                 timeout_sec=30,
@@ -49,10 +49,7 @@ def navigate_back(tool_context: ToolContext) -> str:
 
         _push_screenshot(session_id, browser, on_screenshot)
 
-        if result.success:
-            return "I've gone back to the previous page. Would you like me to read what's on this page?"
-        else:
-            return "I had trouble going back. Would you like me to navigate to a specific website instead?"
+        return "I've gone back to the previous page. Would you like me to read what's on this page?"
 
     except ImportError:
         logger.warning("Nova Act not available — dev mode")

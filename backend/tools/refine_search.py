@@ -44,26 +44,26 @@ def refine_search(refinement: str, tool_context: ToolContext) -> str:
 
         for attempt, instruction in enumerate(rephrasings):
             try:
-                result = _run_on_session_thread(
+                _run_on_session_thread(
                     session_id,
                     lambda inst=instruction: browser.act(inst, max_steps=5),
                 )
                 _push_screenshot(session_id, browser, on_screenshot)
-
-                if result.success:
-                    if on_status:
-                        on_status("Filters updated, reading results...")
-                    return f"I've updated the search with: {refinement}. Let me read the new results for you."
-
-                if attempt == 0:
-                    logger.warning(f"Refine failed, retrying: {refinement}")
-                    if on_status:
-                        on_status("Retrying filter adjustment...")
+                # act() returned without raising — success
+                if on_status:
+                    on_status("Filters updated, reading results...")
+                return f"I've updated the search with: {refinement}. Let me read the new results for you."
 
             except FuturesTimeout:
                 logger.warning(f"Refine timed out (attempt {attempt + 1}): {refinement}")
                 if on_status:
                     on_status("Taking too long, trying again...")
+
+            except Exception as e:
+                logger.warning(f"Refine failed (attempt {attempt + 1}): {refinement} — {e}")
+                if attempt == 0:
+                    if on_status:
+                        on_status("Retrying filter adjustment...")
 
         return "I had trouble applying that filter. Could you rephrase what you'd like to change?"
 

@@ -86,11 +86,12 @@ def browse_website(url: str, action: str, tool_context: ToolContext) -> str:
             with _browsers_lock:
                 _browsers[session_id] = browser
         else:
-            # Navigate to new URL if different
+            # Navigate to new URL using go_to_url (more reliable than act)
             try:
                 _run_on_session_thread(
                     session_id,
-                    lambda: browser.act(f"Navigate to {url}", max_steps=3),
+                    lambda: browser.go_to_url(url),
+                    timeout_sec=60,
                 )
             except FuturesTimeout:
                 logger.warning(f"Navigation to {url} timed out")
@@ -98,7 +99,8 @@ def browse_website(url: str, action: str, tool_context: ToolContext) -> str:
                     on_status("Page took too long, retrying...")
                 _run_on_session_thread(
                     session_id,
-                    lambda: browser.act(f"Navigate to {url}", max_steps=3),
+                    lambda: browser.go_to_url(url),
+                    timeout_sec=60,
                 )
 
         # Push initial screenshot
@@ -125,7 +127,12 @@ def browse_website(url: str, action: str, tool_context: ToolContext) -> str:
         # Get final page content for summary
         if on_status:
             on_status("Reading results...")
-        page_text = browser.page_content() if hasattr(browser, "page_content") else ""
+        try:
+            page_text = _run_on_session_thread(
+                session_id, lambda: browser.page.content(), timeout_sec=10
+            )
+        except Exception:
+            page_text = ""
 
         return f"Done! I've completed the action on {url}. {_summarize_result(action, page_text)}"
 
@@ -146,7 +153,10 @@ def browse_website(url: str, action: str, tool_context: ToolContext) -> str:
 
 
 def _execute_step_with_retries(session_id: str, browser, step: str, on_status, on_screenshot) -> bool:
-    """Execute a Nova Act step with retries and timeout. Returns True on success."""
+    """Execute a Nova Act step with retries and timeout. Returns True on success.
+
+    Nova Act 3.1.x: act() returns ActResult on success, raises an exception on failure.
+    """
     rephrasings = [
         step,
         f"Try to {step}",
@@ -155,35 +165,39 @@ def _execute_step_with_retries(session_id: str, browser, step: str, on_status, o
 
     for attempt, instruction in enumerate(rephrasings[:_MAX_RETRIES + 1]):
         try:
-            result = _run_on_session_thread(
+            _run_on_session_thread(
                 session_id,
                 lambda inst=instruction: browser.act(inst, max_steps=5),
             )
             _push_screenshot(session_id, browser, on_screenshot)
-
-            if result.success:
-                return True
-
-            if attempt < _MAX_RETRIES:
-                logger.warning(f"Step failed (attempt {attempt + 1}), retrying: {step}")
-                if on_status:
-                    on_status("Retrying with different approach...")
+            # act() returned without raising — step succeeded
+            return True
 
         except FuturesTimeout:
             logger.warning(f"Step timed out (attempt {attempt + 1}): {step}")
             if on_status and attempt < _MAX_RETRIES:
                 on_status("That took too long, trying again...")
 
+        except Exception as e:
+            logger.warning(f"Step failed (attempt {attempt + 1}): {step} — {e}")
+            _push_screenshot(session_id, browser, on_screenshot)
+            if attempt < _MAX_RETRIES:
+                if on_status:
+                    on_status("Retrying with different approach...")
+
     return False
 
 
 def _push_screenshot(session_id: str, browser, on_screenshot) -> None:
-    """Capture and push a screenshot if callback is available."""
+    """Capture and push a screenshot if callback is available.
+
+    Uses Playwright's page.screenshot() via the NovaAct page property.
+    """
     if not on_screenshot:
         return
     try:
         screenshot = _run_on_session_thread(
-            session_id, lambda: browser.screenshot(), timeout_sec=10
+            session_id, lambda: browser.page.screenshot(), timeout_sec=10
         )
         if screenshot:
             img_b64 = base64.b64encode(screenshot).decode("utf-8")
