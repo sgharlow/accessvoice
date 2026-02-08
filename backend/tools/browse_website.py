@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeou
 from strands import tool
 from strands.types.tools import ToolContext
 
-from config import NOVA_ACT_API_KEY
+from config import NOVA_ACT_API_KEY, NOVA_ACT_PROXY
 
 logger = logging.getLogger("accessvoice.tools.browse")
 
@@ -74,7 +74,7 @@ def browse_website(url: str, action: str, tool_context: ToolContext) -> str:
                 on_status("Starting browser...")
 
             def _create_browser():
-                b = NovaAct(
+                kwargs = dict(
                     starting_page=url,
                     nova_act_api_key=NOVA_ACT_API_KEY,
                     headless=False,
@@ -83,6 +83,9 @@ def browse_website(url: str, action: str, tool_context: ToolContext) -> str:
                         "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
                     ),
                 )
+                if NOVA_ACT_PROXY:
+                    kwargs["proxy"] = NOVA_ACT_PROXY
+                b = NovaAct(**kwargs)
                 b.start()
                 return b
 

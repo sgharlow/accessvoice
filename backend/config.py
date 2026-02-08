@@ -25,6 +25,19 @@ AUDIO_FORMAT = "pcm"  # 16kHz, 16-bit, mono PCM
 # Nova Act
 NOVA_ACT_API_KEY = os.getenv("NOVA_ACT_API_KEY", "")
 
+# Optional residential proxy for Nova Act browser (bypasses cloud IP bot detection)
+# Format: PROXY_SERVER=http://proxy.example.com:8080
+#         PROXY_USERNAME=user  PROXY_PASSWORD=pass
+PROXY_SERVER = os.getenv("PROXY_SERVER", "")
+PROXY_USERNAME = os.getenv("PROXY_USERNAME", "")
+PROXY_PASSWORD = os.getenv("PROXY_PASSWORD", "")
+NOVA_ACT_PROXY = None
+if PROXY_SERVER:
+    NOVA_ACT_PROXY = {"server": PROXY_SERVER}
+    if PROXY_USERNAME:
+        NOVA_ACT_PROXY["username"] = PROXY_USERNAME
+        NOVA_ACT_PROXY["password"] = PROXY_PASSWORD
+
 # Server
 BACKEND_PORT = int(os.getenv("BACKEND_PORT", "8000"))
 FRONTEND_PORT = int(os.getenv("FRONTEND_PORT", "5173"))
