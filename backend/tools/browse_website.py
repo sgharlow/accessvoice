@@ -78,6 +78,10 @@ def browse_website(url: str, action: str, tool_context: ToolContext) -> str:
                     starting_page=url,
                     nova_act_api_key=NOVA_ACT_API_KEY,
                     headless=False,
+                    user_agent=(
+                        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                        "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+                    ),
                 )
                 b.start()
                 return b
