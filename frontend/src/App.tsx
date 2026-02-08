@@ -83,6 +83,7 @@ function App() {
   const [screenshot, setScreenshot] = useState<string | null>(null);
   const [isSessionActive, setIsSessionActive] = useState(false);
   const audioQueueRef = useRef(new AudioQueue());
+  const textInputRef = useRef<HTMLInputElement>(null);
 
   // Clean up audio queue on unmount
   useEffect(() => {
@@ -108,6 +109,8 @@ function App() {
         setIsSessionActive(true);
         audioQueueRef.current.start();
         setStatus("Listening...");
+        // Focus the text input after session starts
+        setTimeout(() => textInputRef.current?.focus(), 100);
       },
       onSessionStopped: () => {
         setIsSessionActive(false);
@@ -152,6 +155,29 @@ function App() {
     [isSessionActive, sendText, addTranscript]
   );
 
+  // Global keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl+Shift+S — toggle session
+      if (e.ctrlKey && e.shiftKey && e.key === "S") {
+        e.preventDefault();
+        handleToggleSession();
+      }
+      // Ctrl+Shift+M — toggle microphone
+      if (e.ctrlKey && e.shiftKey && e.key === "M" && isSessionActive) {
+        e.preventDefault();
+        handleToggleRecording();
+      }
+      // Ctrl+Shift+T — focus text input
+      if (e.ctrlKey && e.shiftKey && e.key === "T" && isSessionActive) {
+        e.preventDefault();
+        textInputRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [handleToggleSession, handleToggleRecording, isSessionActive]);
+
   return (
     <div className="app-container">
       <header className="app-header" role="banner">
@@ -167,7 +193,7 @@ function App() {
         />
       </header>
 
-      <main className="app-main" role="main">
+      <main className="app-main" role="main" id="main-content">
         <div className="panel-left">
           <BrowserView screenshot={screenshot} />
         </div>
@@ -182,6 +208,7 @@ function App() {
                 ? "Type a command or question..."
                 : "Start a session first"
             }
+            inputRef={textInputRef}
           />
         </div>
       </main>
@@ -194,6 +221,11 @@ function App() {
           onToggleSession={handleToggleSession}
           onToggleRecording={handleToggleRecording}
         />
+        <div className="keyboard-hints" aria-hidden="true">
+          <kbd>Ctrl+Shift+S</kbd> Session
+          <kbd>Ctrl+Shift+M</kbd> Mic
+          <kbd>Ctrl+Shift+T</kbd> Text
+        </div>
       </footer>
     </div>
   );

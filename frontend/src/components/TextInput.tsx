@@ -1,15 +1,17 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, Ref } from "react";
 
 interface TextInputProps {
   onSubmit: (text: string) => void;
   disabled: boolean;
   placeholder: string;
+  inputRef?: Ref<HTMLInputElement>;
 }
 
 export default function TextInput({
   onSubmit,
   disabled,
   placeholder,
+  inputRef,
 }: TextInputProps) {
   const [value, setValue] = useState("");
 
@@ -31,6 +33,7 @@ export default function TextInput({
         Type a command or question
       </label>
       <input
+        ref={inputRef}
         id="text-input"
         type="text"
         className="text-input"
@@ -39,6 +42,7 @@ export default function TextInput({
         placeholder={placeholder}
         disabled={disabled}
         aria-label="Type a command or question"
+        autoComplete="off"
       />
       <button
         type="submit"

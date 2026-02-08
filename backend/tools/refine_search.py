@@ -3,6 +3,7 @@
 import base64
 import logging
 import time
+from concurrent.futures import TimeoutError as FuturesTimeout
 
 from strands import tool
 from strands.types.tools import ToolContext
@@ -27,40 +28,42 @@ def refine_search(refinement: str, tool_context: ToolContext) -> str:
     on_status = tool_context.invocation_state.get("on_status")
 
     if on_status:
-        on_status(f"Adjusting: {refinement}...")
+        on_status(f"Adjusting filters: {refinement[:50]}...")
 
     try:
-        from tools.browse_website import _browsers
+        from tools.browse_website import _browsers, _run_with_timeout, _push_screenshot
 
         browser = _browsers.get(session_id)
         if not browser:
             return "No browser session is active. Please ask me to navigate to a website first."
 
-        result = browser.act(f"Adjust the search filters: {refinement}", max_steps=5)
+        # Try with timeout and retries
+        rephrasings = [
+            f"Adjust the search filters: {refinement}",
+            refinement,
+        ]
 
-        # Push updated screenshot
-        screenshot = browser.screenshot()
-        if screenshot and on_screenshot:
-            img_b64 = base64.b64encode(screenshot).decode("utf-8")
-            on_screenshot(img_b64)
+        for attempt, instruction in enumerate(rephrasings):
+            try:
+                result = _run_with_timeout(lambda inst=instruction: browser.act(inst, max_steps=5))
+                _push_screenshot(browser, on_screenshot)
 
-        if result.success:
-            return f"I've updated the search with: {refinement}. Let me read the new results for you."
-        else:
-            # Retry with simpler instruction
-            if on_status:
-                on_status("Retrying filter adjustment...")
-            result = browser.act(refinement, max_steps=5)
+                if result.success:
+                    if on_status:
+                        on_status("Filters updated, reading results...")
+                    return f"I've updated the search with: {refinement}. Let me read the new results for you."
 
-            screenshot = browser.screenshot()
-            if screenshot and on_screenshot:
-                img_b64 = base64.b64encode(screenshot).decode("utf-8")
-                on_screenshot(img_b64)
+                if attempt == 0:
+                    logger.warning(f"Refine failed, retrying: {refinement}")
+                    if on_status:
+                        on_status("Retrying filter adjustment...")
 
-            if result.success:
-                return f"Done — I've applied the change: {refinement}."
-            else:
-                return "I had trouble applying that filter. Could you rephrase what you'd like to change?"
+            except FuturesTimeout:
+                logger.warning(f"Refine timed out (attempt {attempt + 1}): {refinement}")
+                if on_status:
+                    on_status("Taking too long, trying again...")
+
+        return "I had trouble applying that filter. Could you rephrase what you'd like to change?"
 
     except ImportError:
         logger.warning("Nova Act not available — dev mode")
@@ -69,4 +72,4 @@ def refine_search(refinement: str, tool_context: ToolContext) -> str:
 
     except Exception as e:
         logger.error(f"Refine search failed: {e}")
-        return f"I had trouble adjusting the search: {str(e)}"
+        return "I had trouble adjusting the search. Could you tell me what you'd like to change in a different way?"

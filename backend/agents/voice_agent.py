@@ -7,6 +7,7 @@ Tool calls (browse, read_page, etc.) are triggered mid-conversation by voice com
 import asyncio
 import base64
 import logging
+import time
 from typing import Callable, Optional
 
 from strands.experimental.bidi import (
@@ -34,6 +35,15 @@ from tools.navigate_back import navigate_back
 
 logger = logging.getLogger("accessvoice.voice")
 
+# Friendly tool names for status updates
+_TOOL_LABELS = {
+    "browse_website": "Browsing the web",
+    "read_page": "Reading the page",
+    "refine_search": "Adjusting search",
+    "navigate_back": "Going back",
+    "stop_conversation": "Ending conversation",
+}
+
 
 class VoiceAgent:
     """Manages a Nova Sonic bidirectional voice session with tool calling."""
@@ -53,6 +63,8 @@ class VoiceAgent:
         self._on_screenshot = on_screenshot
         self._receive_task: Optional[asyncio.Task] = None
         self._keepalive_task: Optional[asyncio.Task] = None
+        self._closed = False
+        self._last_activity = time.monotonic()
 
         # Pre-compute a 100ms silent audio frame (16kHz, 16-bit mono = 3200 bytes)
         self._silence_b64 = base64.b64encode(b"\x00" * 3200).decode("utf-8")
@@ -85,6 +97,11 @@ class VoiceAgent:
             system_prompt=SYSTEM_PROMPT,
         )
 
+    @property
+    def idle_seconds(self) -> float:
+        """Seconds since last activity (audio/text input)."""
+        return time.monotonic() - self._last_activity
+
     async def start(self) -> None:
         """Start the BidiAgent connection and spawn the event receive loop."""
         self._on_status("Connecting to Nova Sonic...")
@@ -102,7 +119,7 @@ class VoiceAgent:
 
         except Exception as e:
             logger.error(f"Failed to start BidiAgent: {e}")
-            self._on_status(f"Connection error: {str(e)}")
+            self._on_status("Connection failed. Please try again.")
             raise
 
     async def _event_loop(self) -> None:
@@ -129,7 +146,7 @@ class VoiceAgent:
                         self._on_transcript(text, role)
 
                 elif event_type == "bidi_connection_restart":
-                    self._on_status("Reconnecting...")
+                    self._on_status("Reconnecting — one moment...")
                     logger.info("Nova Sonic connection restarting (8-min timeout)")
 
                 elif event_type == "bidi_interruption":
@@ -141,7 +158,13 @@ class VoiceAgent:
                 elif event_type == "bidi_error":
                     error_msg = event.get("message", "Unknown error")
                     logger.error(f"BidiAgent error: {error_msg}")
-                    self._on_status(f"Error: {error_msg}")
+                    # Show user-friendly message instead of raw error
+                    if "timeout" in error_msg.lower():
+                        self._on_status("Connection timed out. Reconnecting...")
+                    elif "throttl" in error_msg.lower():
+                        self._on_status("Service busy — retrying...")
+                    else:
+                        self._on_status("Something went wrong. Still listening...")
 
                 elif event_type == "bidi_connection_close":
                     reason = event.get("reason", "unknown")
@@ -153,16 +176,18 @@ class VoiceAgent:
                 elif isinstance(event, ToolUseStreamEvent):
                     tool_use = event.get("current_tool_use", {})
                     tool_name = tool_use.get("name", "")
-                    self._on_status(f"Running: {tool_name}...")
+                    label = _TOOL_LABELS.get(tool_name, tool_name)
+                    self._on_status(f"{label}...")
 
                 elif isinstance(event, ToolResultEvent):
-                    self._on_status("Responding...")
+                    self._on_status("Preparing response...")
 
         except asyncio.CancelledError:
             logger.info(f"Event loop cancelled for session {self.session_id}")
         except Exception as e:
             logger.error(f"Event loop error for session {self.session_id}: {e}")
-            self._on_status(f"Connection lost: {str(e)}")
+            if not self._closed:
+                self._on_status("Connection lost. Please restart the session.")
 
     async def _audio_keepalive(self) -> None:
         """Send silent audio frames to keep the Nova Sonic connection alive.
@@ -187,6 +212,7 @@ class VoiceAgent:
 
     async def send_audio(self, audio_b64: str) -> None:
         """Forward base64-encoded PCM audio from the client microphone to BidiAgent."""
+        self._last_activity = time.monotonic()
         try:
             await self._agent.send(BidiAudioInputEvent(
                 audio=audio_b64,
@@ -199,6 +225,7 @@ class VoiceAgent:
 
     async def send_text(self, text: str) -> None:
         """Forward text input to BidiAgent."""
+        self._last_activity = time.monotonic()
         try:
             await self._agent.send(BidiTextInputEvent(text=text, role="user"))
         except Exception as e:
@@ -206,6 +233,8 @@ class VoiceAgent:
 
     async def close(self) -> None:
         """Clean up the voice session."""
+        self._closed = True
+
         # Cancel background tasks
         for task in (self._keepalive_task, self._receive_task):
             if task and not task.done():

@@ -4,12 +4,16 @@ import base64
 import logging
 
 import boto3
+from botocore.config import Config as BotoConfig
 from strands import tool
 from strands.types.tools import ToolContext
 
 from config import NOVA_LITE_REGION, NOVA_LITE_MODEL_ID
 
 logger = logging.getLogger("accessvoice.tools.read_page")
+
+# Timeout for Bedrock vision call (seconds)
+_VISION_TIMEOUT = 30
 
 VISION_PROMPT = """You are an accessibility assistant helping a visually impaired user understand a web page.
 
@@ -62,8 +66,19 @@ def read_page(focus: str = "main content", tool_context: ToolContext = None) -> 
             img_b64 = base64.b64encode(screenshot).decode("utf-8")
             on_screenshot(img_b64)
 
-        # Send to Nova 2 Lite for vision analysis (us-west-2)
-        bedrock = boto3.client("bedrock-runtime", region_name=NOVA_LITE_REGION)
+        if on_status:
+            on_status("Analyzing page content...")
+
+        # Send to Nova 2 Lite for vision analysis (us-west-2) with timeout
+        bedrock = boto3.client(
+            "bedrock-runtime",
+            region_name=NOVA_LITE_REGION,
+            config=BotoConfig(
+                read_timeout=_VISION_TIMEOUT,
+                connect_timeout=10,
+                retries={"max_attempts": 2, "mode": "adaptive"},
+            ),
+        )
 
         response = bedrock.converse(
             modelId=NOVA_LITE_MODEL_ID,
@@ -93,7 +108,10 @@ def read_page(focus: str = "main content", tool_context: ToolContext = None) -> 
             if "text" in block:
                 summary += block["text"]
 
-        return summary or "I couldn't read the page content."
+        if on_status:
+            on_status("Responding...")
+
+        return summary or "I couldn't read the page content. Let me try again."
 
     except ImportError:
         logger.warning("Nova Act not available — dev mode")
@@ -101,4 +119,9 @@ def read_page(focus: str = "main content", tool_context: ToolContext = None) -> 
 
     except Exception as e:
         logger.error(f"Read page failed: {e}")
-        return f"I had trouble reading the page: {str(e)}"
+        err_msg = str(e).lower()
+        if "timeout" in err_msg or "timed out" in err_msg:
+            return "The page analysis took too long. Would you like me to try reading a specific section?"
+        if "throttl" in err_msg:
+            return "The service is busy right now. Let me try again in a moment."
+        return "I had trouble reading the page. Would you like me to try again?"

@@ -370,6 +370,39 @@ body {
   background: #33eaff;
 }
 
+/* ── Keyboard Hints ────────────────────────────────────── */
+
+.keyboard-hints {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 8px;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  opacity: 0.5;
+}
+
+.keyboard-hints kbd {
+  display: inline-block;
+  padding: 1px 6px;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  margin-right: 4px;
+}
+
+/* ── Skip Link (visible on focus) ──────────────────────── */
+
+a[href="#main-content"]:focus {
+  position: fixed !important;
+  width: auto !important;
+  height: auto !important;
+  clip: auto !important;
+  overflow: visible !important;
+}
+
 /* ── Responsive ─────────────────────────────────────────── */
 
 @media (max-width: 768px) {
@@ -383,6 +416,10 @@ body {
 
   .panel-right {
     min-height: 200px;
+  }
+
+  .keyboard-hints {
+    display: none;
   }
 }
 
@@ -404,6 +441,14 @@ body {
 
   .transcript-entry {
     border-left-width: 4px;
+  }
+
+  .keyboard-hints {
+    opacity: 0.8;
+  }
+
+  .keyboard-hints kbd {
+    border-width: 2px;
   }
 }
 

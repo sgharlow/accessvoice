@@ -20,7 +20,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("accessvoice")
 
 # FastAPI app
-app = FastAPI(title="AccessVoice", version="0.2.0")
+app = FastAPI(title="AccessVoice", version="0.3.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
@@ -39,6 +39,18 @@ socket_app = socketio.ASGIApp(sio, app)
 
 # Session manager
 sessions = SessionManager(max_sessions=MAX_CONCURRENT_SESSIONS)
+
+
+@app.on_event("startup")
+async def on_startup():
+    """Start background tasks on server startup."""
+    sessions.start_cleanup_loop()
+
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    """Clean up all sessions on server shutdown."""
+    await sessions.cleanup_all()
 
 
 @app.get("/health")
@@ -77,7 +89,7 @@ async def start_session(sid: str, data: dict):
     try:
         # Capture the event loop — callbacks may be invoked from tool threads
         # (BidiAgent runs tools via ConcurrentToolExecutor in separate threads).
-        # call_soon_threadsafe ensures the coroutine is scheduled safely.
+        # run_coroutine_threadsafe ensures the coroutine is scheduled safely.
         loop = asyncio.get_running_loop()
 
         def _emit_threadsafe(event: str, data: dict):
@@ -109,7 +121,7 @@ async def start_session(sid: str, data: dict):
 
     except Exception as e:
         logger.error(f"Failed to start session: {e}")
-        await sio.emit("error", {"message": f"Failed to start session: {str(e)}"}, to=sid)
+        await sio.emit("error", {"message": "Failed to start voice session. Please try again."}, to=sid)
 
 
 @sio.event
