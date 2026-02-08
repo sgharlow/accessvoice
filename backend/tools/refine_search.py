@@ -1,72 +1,72 @@
 """refine_search tool — Adjusts filters/search criteria on the current page via Nova Act."""
 
-import asyncio
 import base64
 import logging
-from typing import Callable
+import time
 
-from config import NOVA_ACT_API_KEY
+from strands import tool
+from strands.types.tools import ToolContext
 
 logger = logging.getLogger("accessvoice.tools.refine")
 
 
-async def refine_search(
-    session_id: str,
-    refinement: str,
-    on_screenshot: Callable[[str], None],
-    on_status: Callable[[str], None],
-    **kwargs,
-) -> dict:
+@tool(context=True)
+def refine_search(refinement: str, tool_context: ToolContext) -> str:
     """Modify search filters or criteria on the current page.
 
+    Use this when the user wants to narrow or change their search.
+
     Args:
-        session_id: Current session ID
-        refinement: Natural language description of what to change
-        on_screenshot: Callback for screenshots
-        on_status: Callback for status updates
+        refinement: What to change. Examples: 'increase max price to $2500', 'filter by 2+ bathrooms', 'sort by lowest price'
 
     Returns:
-        dict with 'summary' describing what was changed
+        Description of what was changed.
     """
-    on_status(f"Adjusting: {refinement}...")
+    session_id = tool_context.invocation_state.get("session_id", "")
+    on_screenshot = tool_context.invocation_state.get("on_screenshot")
+    on_status = tool_context.invocation_state.get("on_status")
+
+    if on_status:
+        on_status(f"Adjusting: {refinement}...")
 
     try:
         from tools.browse_website import _browsers
 
         browser = _browsers.get(session_id)
         if not browser:
-            return {"summary": "No browser session is active. Please ask me to navigate to a website first."}
+            return "No browser session is active. Please ask me to navigate to a website first."
 
         result = browser.act(f"Adjust the search filters: {refinement}", max_steps=5)
 
         # Push updated screenshot
         screenshot = browser.screenshot()
-        if screenshot:
+        if screenshot and on_screenshot:
             img_b64 = base64.b64encode(screenshot).decode("utf-8")
             on_screenshot(img_b64)
 
         if result.success:
-            return {"summary": f"I've updated the search with: {refinement}. Let me read the new results for you."}
+            return f"I've updated the search with: {refinement}. Let me read the new results for you."
         else:
             # Retry with simpler instruction
-            on_status("Retrying filter adjustment...")
+            if on_status:
+                on_status("Retrying filter adjustment...")
             result = browser.act(refinement, max_steps=5)
 
             screenshot = browser.screenshot()
-            if screenshot:
+            if screenshot and on_screenshot:
                 img_b64 = base64.b64encode(screenshot).decode("utf-8")
                 on_screenshot(img_b64)
 
             if result.success:
-                return {"summary": f"Done — I've applied the change: {refinement}."}
+                return f"Done — I've applied the change: {refinement}."
             else:
-                return {"summary": f"I had trouble applying that filter. Could you rephrase what you'd like to change?"}
+                return "I had trouble applying that filter. Could you rephrase what you'd like to change?"
 
     except ImportError:
         logger.warning("Nova Act not available — dev mode")
-        await asyncio.sleep(0.5)
-        return {"summary": f"[Dev mode] Would refine search: {refinement}"}
+        time.sleep(0.5)
+        return f"[Dev mode] Would refine search: {refinement}"
 
     except Exception as e:
         logger.error(f"Refine search failed: {e}")
-        return {"summary": f"I had trouble adjusting the search: {str(e)}"}
+        return f"I had trouble adjusting the search: {str(e)}"

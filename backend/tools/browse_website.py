@@ -1,9 +1,11 @@
 """browse_website tool — Uses Nova Act to navigate and interact with web pages."""
 
-import asyncio
 import base64
 import logging
-from typing import Callable
+import time
+
+from strands import tool
+from strands.types.tools import ToolContext
 
 from config import NOVA_ACT_API_KEY
 
@@ -13,27 +15,25 @@ logger = logging.getLogger("accessvoice.tools.browse")
 _browsers: dict[str, object] = {}
 
 
-async def browse_website(
-    session_id: str,
-    url: str,
-    action: str,
-    on_screenshot: Callable[[str], None],
-    on_status: Callable[[str], None],
-    **kwargs,
-) -> dict:
-    """Navigate to a URL and perform an action using Nova Act.
+@tool(context=True)
+def browse_website(url: str, action: str, tool_context: ToolContext) -> str:
+    """Navigate to a website URL and perform actions like clicking, typing, or scrolling.
+
+    Use this when the user wants to visit a website or interact with page elements.
 
     Args:
-        session_id: Current session ID for browser persistence
-        url: Website URL to navigate to
-        action: Natural language description of what to do
-        on_screenshot: Callback to push screenshots to frontend
-        on_status: Callback to push status updates
+        url: The URL to navigate to. Include https://. Examples: https://zillow.com, https://amazon.com
+        action: What to do on the page. Be specific. Examples: 'search for 3 bedroom apartments in Seattle under $2000', 'click on the first result', 'scroll down to see more results'
 
     Returns:
-        dict with 'summary' key containing action result description
+        Summary of what happened on the page.
     """
-    on_status(f"Opening {url}...")
+    session_id = tool_context.invocation_state.get("session_id", "")
+    on_screenshot = tool_context.invocation_state.get("on_screenshot")
+    on_status = tool_context.invocation_state.get("on_status")
+
+    if on_status:
+        on_status(f"Opening {url}...")
 
     try:
         from nova_act import NovaAct
@@ -53,66 +53,60 @@ async def browse_website(
 
         # Push initial screenshot
         screenshot = browser.screenshot()
-        if screenshot:
+        if screenshot and on_screenshot:
             img_b64 = base64.b64encode(screenshot).decode("utf-8")
             on_screenshot(img_b64)
 
-        on_status(f"Performing: {action}...")
+        if on_status:
+            on_status(f"Performing: {action}...")
 
         # Break complex actions into smaller steps for reliability
-        # Nova Act has ~90% success per step; smaller steps = higher overall success
         steps = _decompose_action(action)
 
         for i, step in enumerate(steps):
-            on_status(f"Step {i + 1}/{len(steps)}: {step[:50]}...")
+            if on_status:
+                on_status(f"Step {i + 1}/{len(steps)}: {step[:50]}...")
             logger.info(f"Executing step {i + 1}: {step}")
 
             result = browser.act(step, max_steps=5)
 
             # Push screenshot after each step
             screenshot = browser.screenshot()
-            if screenshot:
+            if screenshot and on_screenshot:
                 img_b64 = base64.b64encode(screenshot).decode("utf-8")
                 on_screenshot(img_b64)
 
             if not result.success:
                 # Retry once with rephrased instruction
                 logger.warning(f"Step failed, retrying: {step}")
-                on_status(f"Retrying step {i + 1}...")
+                if on_status:
+                    on_status(f"Retrying step {i + 1}...")
                 result = browser.act(f"Try to {step}", max_steps=5)
 
                 if not result.success:
-                    return {"summary": f"I was able to partially complete the task. I got stuck at: {step}"}
+                    return f"I was able to partially complete the task. I got stuck at: {step}"
 
         # Get final page content for summary
-        on_status("Reading page content...")
-        page_text = browser.page_content() if hasattr(browser, 'page_content') else ""
+        if on_status:
+            on_status("Reading page content...")
+        page_text = browser.page_content() if hasattr(browser, "page_content") else ""
 
-        return {
-            "summary": f"I've completed the action on {url}. {_summarize_result(action, page_text)}",
-        }
+        return f"I've completed the action on {url}. {_summarize_result(action, page_text)}"
 
     except ImportError:
         logger.warning("Nova Act not installed — returning mock result for development")
-        on_status("Browsing (dev mode)...")
-        await asyncio.sleep(1)
-        return {
-            "summary": f"[Dev mode] Would navigate to {url} and {action}. Nova Act SDK not installed.",
-        }
+        if on_status:
+            on_status("Browsing (dev mode)...")
+        time.sleep(1)
+        return f"[Dev mode] Would navigate to {url} and {action}. Nova Act SDK not installed."
 
     except Exception as e:
         logger.error(f"Browse failed: {e}")
-        return {"summary": f"I had trouble accessing {url}: {str(e)}"}
+        return f"I had trouble accessing {url}: {str(e)}"
 
 
 def _decompose_action(action: str) -> list[str]:
-    """Break a complex action into smaller, more reliable steps.
-
-    Nova Act succeeds ~90% per step. With 3 steps and retry:
-    Success rate = 1 - (1 - 0.9^3) * (1 - 0.9^3) ≈ 99.5%
-    """
-    # For now, return as single action. Phase 2 will add smart decomposition.
-    # Complex actions will be broken down by the LLM or by heuristics.
+    """Break a complex action into smaller, more reliable steps."""
     return [action]
 
 
@@ -120,12 +114,11 @@ def _summarize_result(action: str, page_text: str) -> str:
     """Create a brief summary of what was accomplished."""
     if not page_text:
         return "The action was completed successfully."
-    # Truncate for summary
     snippet = page_text[:500]
     return f"Here's what I found: {snippet}"
 
 
-async def cleanup_browser(session_id: str) -> None:
+def cleanup_browser(session_id: str) -> None:
     """Close and clean up a browser session."""
     browser = _browsers.pop(session_id, None)
     if browser:

@@ -6,16 +6,21 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # AWS
-AWS_REGION = os.getenv("AWS_DEFAULT_REGION", "us-east-1")
+AWS_REGION = os.getenv("AWS_DEFAULT_REGION", "us-west-2")
 
-# Bedrock Model IDs
-NOVA_SONIC_MODEL_ID = "amazon.nova-sonic-v1:0"
-NOVA_LITE_MODEL_ID = "amazon.nova-lite-v1:0"
+# Nova Sonic runs only in us-east-1 (not us-west-2)
+NOVA_SONIC_REGION = "us-east-1"
+NOVA_SONIC_MODEL_ID = "amazon.nova-2-sonic-v1:0"
 
-# Nova Sonic voice config
+# Nova 2 Lite stays in us-west-2 (cross-region inference profile)
+NOVA_LITE_MODEL_ID = "us.amazon.nova-2-lite-v1:0"
+NOVA_LITE_REGION = AWS_REGION  # us-west-2
+
+# Voice settings for BidiNovaSonicModel
 VOICE_ID = "tiffany"  # Clear, natural female voice
-INPUT_AUDIO_FORMAT = "pcm"  # 16kHz, 16-bit, mono PCM
-OUTPUT_AUDIO_FORMAT = "pcm"
+AUDIO_SAMPLE_RATE = 16000
+AUDIO_CHANNELS = 1
+AUDIO_FORMAT = "pcm"  # 16kHz, 16-bit, mono PCM
 
 # Nova Act
 NOVA_ACT_API_KEY = os.getenv("NOVA_ACT_API_KEY", "")

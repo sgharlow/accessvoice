@@ -1,14 +1,13 @@
 """read_page tool — Uses Nova 2 Lite to create accessibility-focused page summaries."""
 
-import asyncio
 import base64
-import json
 import logging
-from typing import Callable
 
 import boto3
+from strands import tool
+from strands.types.tools import ToolContext
 
-from config import AWS_REGION, NOVA_LITE_MODEL_ID
+from config import NOVA_LITE_REGION, NOVA_LITE_MODEL_ID
 
 logger = logging.getLogger("accessvoice.tools.read_page")
 
@@ -27,44 +26,44 @@ Keep it concise but complete. Speak naturally — this will be read aloud.
 Focus on: {focus}"""
 
 
-async def read_page(
-    session_id: str,
-    on_screenshot: Callable[[str], None],
-    on_status: Callable[[str], None],
-    focus: str = "main content",
-    **kwargs,
-) -> dict:
-    """Analyze the current page screenshot using Nova 2 Lite vision.
+@tool(context=True)
+def read_page(focus: str = "main content", tool_context: ToolContext = None) -> str:
+    """Get an accessibility-focused summary of the current page content.
+
+    Use this to read results, articles, or any page content back to the user.
 
     Args:
-        session_id: Current session ID
-        focus: What aspect of the page to focus on
-        on_screenshot: Callback for screenshots
-        on_status: Callback for status updates
+        focus: What aspect of the page to focus on. Examples: 'search results', 'article content', 'product details', 'navigation options'
 
     Returns:
-        dict with 'summary' containing the accessibility-focused description
+        Accessibility-focused description of the page.
     """
-    on_status("Reading page content...")
+    session_id = tool_context.invocation_state.get("session_id", "")
+    on_screenshot = tool_context.invocation_state.get("on_screenshot")
+    on_status = tool_context.invocation_state.get("on_status")
+
+    if on_status:
+        on_status("Reading page content...")
 
     try:
         from tools.browse_website import _browsers
 
         browser = _browsers.get(session_id)
         if not browser:
-            return {"summary": "No browser session is active. Please ask me to navigate to a website first."}
+            return "No browser session is active. Please ask me to navigate to a website first."
 
         # Get screenshot
         screenshot = browser.screenshot()
         if not screenshot:
-            return {"summary": "I couldn't capture the current page. Please try again."}
+            return "I couldn't capture the current page. Please try again."
 
         # Push screenshot to frontend
-        img_b64 = base64.b64encode(screenshot).decode("utf-8")
-        on_screenshot(img_b64)
+        if on_screenshot:
+            img_b64 = base64.b64encode(screenshot).decode("utf-8")
+            on_screenshot(img_b64)
 
-        # Send to Nova 2 Lite for vision analysis
-        bedrock = boto3.client("bedrock-runtime", region_name=AWS_REGION)
+        # Send to Nova 2 Lite for vision analysis (us-west-2)
+        bedrock = boto3.client("bedrock-runtime", region_name=NOVA_LITE_REGION)
 
         response = bedrock.converse(
             modelId=NOVA_LITE_MODEL_ID,
@@ -94,13 +93,12 @@ async def read_page(
             if "text" in block:
                 summary += block["text"]
 
-        return {"summary": summary or "I couldn't read the page content."}
+        return summary or "I couldn't read the page content."
 
     except ImportError:
         logger.warning("Nova Act not available — dev mode")
-        await asyncio.sleep(0.5)
-        return {"summary": f"[Dev mode] Would analyze page with focus on: {focus}"}
+        return f"[Dev mode] Would analyze page with focus on: {focus}"
 
     except Exception as e:
         logger.error(f"Read page failed: {e}")
-        return {"summary": f"I had trouble reading the page: {str(e)}"}
+        return f"I had trouble reading the page: {str(e)}"

@@ -1,22 +1,35 @@
 """Voice agent — orchestrates Nova Sonic for bidirectional voice conversation.
 
-Uses Strands BidiAgent with Nova Sonic for real-time voice interaction.
-Tool calls (browse, read_page, etc.) are triggered by voice commands.
+Uses Strands BidiAgent with BidiNovaSonicModel for real-time speech-to-speech.
+Tool calls (browse, read_page, etc.) are triggered mid-conversation by voice commands.
 """
 
 import asyncio
-import json
 import logging
 from typing import Callable, Optional
 
-import boto3
+from strands.experimental.bidi import (
+    BidiAgent,
+    BidiAudioInputEvent,
+    BidiTextInputEvent,
+    stop_conversation,
+)
+from strands.experimental.bidi.models.nova_sonic import BidiNovaSonicModel
+from strands.types._events import ToolUseStreamEvent, ToolResultEvent
 
 from config import (
-    AWS_REGION,
+    NOVA_SONIC_REGION,
     NOVA_SONIC_MODEL_ID,
     VOICE_ID,
+    AUDIO_SAMPLE_RATE,
+    AUDIO_CHANNELS,
+    AUDIO_FORMAT,
     SYSTEM_PROMPT,
 )
+from tools.browse_website import browse_website
+from tools.read_page import read_page
+from tools.refine_search import refine_search
+from tools.navigate_back import navigate_back
 
 logger = logging.getLogger("accessvoice.voice")
 
@@ -28,7 +41,7 @@ class VoiceAgent:
         self,
         session_id: str,
         on_transcript: Callable[[str, str], None],
-        on_audio: Callable[[bytes], None],
+        on_audio: Callable[[str], None],
         on_status: Callable[[str], None],
         on_screenshot: Callable[[str], None],
     ):
@@ -37,276 +50,151 @@ class VoiceAgent:
         self._on_audio = on_audio
         self._on_status = on_status
         self._on_screenshot = on_screenshot
+        self._receive_task: Optional[asyncio.Task] = None
 
-        self._bedrock = boto3.client(
-            "bedrock-runtime",
-            region_name=AWS_REGION,
+        # Build the BidiNovaSonicModel targeting us-east-1
+        self._model = BidiNovaSonicModel(
+            model_id=NOVA_SONIC_MODEL_ID,
+            provider_config={
+                "audio": {
+                    "input_rate": AUDIO_SAMPLE_RATE,
+                    "output_rate": AUDIO_SAMPLE_RATE,
+                    "channels": AUDIO_CHANNELS,
+                    "format": AUDIO_FORMAT,
+                    "voice": VOICE_ID,
+                },
+                "inference": {
+                    "max_tokens": 1024,
+                    "temperature": 0.7,
+                },
+            },
+            client_config={
+                "region": NOVA_SONIC_REGION,
+            },
         )
-        self._stream = None
-        self._is_active = False
-        self._audio_buffer = bytearray()
 
-        # Tool definitions for Nova Sonic
-        self._tools = [
-            {
-                "toolSpec": {
-                    "name": "browse_website",
-                    "description": "Navigate to a website URL and perform actions like clicking, typing, or scrolling. Use this when the user wants to visit a website or interact with page elements.",
-                    "inputSchema": {
-                        "json": {
-                            "type": "object",
-                            "properties": {
-                                "url": {
-                                    "type": "string",
-                                    "description": "The URL to navigate to. Include https://. Examples: https://zillow.com, https://amazon.com",
-                                },
-                                "action": {
-                                    "type": "string",
-                                    "description": "What to do on the page. Be specific. Examples: 'search for 3 bedroom apartments in Seattle under $2000', 'click on the first result', 'scroll down to see more results'",
-                                },
-                            },
-                            "required": ["url", "action"],
-                        }
-                    },
-                }
-            },
-            {
-                "toolSpec": {
-                    "name": "read_page",
-                    "description": "Get an accessibility-focused summary of the current page content. Use this to read results, articles, or any page content back to the user.",
-                    "inputSchema": {
-                        "json": {
-                            "type": "object",
-                            "properties": {
-                                "focus": {
-                                    "type": "string",
-                                    "description": "What aspect to focus on. Examples: 'search results', 'article content', 'product details', 'navigation options'",
-                                },
-                            },
-                        }
-                    },
-                }
-            },
-            {
-                "toolSpec": {
-                    "name": "refine_search",
-                    "description": "Modify filters or search criteria on the current page. Use this when the user wants to narrow or change their search.",
-                    "inputSchema": {
-                        "json": {
-                            "type": "object",
-                            "properties": {
-                                "refinement": {
-                                    "type": "string",
-                                    "description": "What to change. Examples: 'increase max price to $2500', 'filter by 2+ bathrooms', 'sort by lowest price'",
-                                },
-                            },
-                            "required": ["refinement"],
-                        }
-                    },
-                }
-            },
-            {
-                "toolSpec": {
-                    "name": "navigate_back",
-                    "description": "Go back to the previous page in the browser.",
-                    "inputSchema": {
-                        "json": {
-                            "type": "object",
-                            "properties": {},
-                        }
-                    },
-                }
-            },
-        ]
+        # Build the BidiAgent with all 4 tools
+        self._agent = BidiAgent(
+            model=self._model,
+            tools=[browse_website, read_page, refine_search, navigate_back, stop_conversation],
+            system_prompt=SYSTEM_PROMPT,
+        )
 
-    async def _start_stream(self):
-        """Initialize the Nova Sonic bidirectional stream via Bedrock."""
+    async def start(self) -> None:
+        """Start the BidiAgent connection and spawn the event receive loop."""
         self._on_status("Connecting to Nova Sonic...")
 
         try:
-            # Start the bidirectional stream
-            response = self._bedrock.invoke_model_with_response_stream(
-                modelId=NOVA_SONIC_MODEL_ID,
-                contentType="application/json",
-                accept="application/json",
-                body=json.dumps({
-                    "inferenceConfiguration": {
-                        "maxTokens": 1024,
-                    },
-                    "system": [{"text": SYSTEM_PROMPT}],
-                    "toolConfig": {"tools": self._tools},
-                }),
-            )
-            self._stream = response.get("body")
-            self._is_active = True
-            self._on_status("Connected — listening...")
-            logger.info(f"Nova Sonic stream started for session {self.session_id}")
+            await self._agent.start(invocation_state={
+                "session_id": self.session_id,
+                "on_screenshot": self._on_screenshot,
+                "on_status": self._on_status,
+            })
+            # Spawn background receive loop
+            self._receive_task = asyncio.create_task(self._event_loop())
+            logger.info(f"BidiAgent started for session {self.session_id}")
 
         except Exception as e:
-            logger.error(f"Failed to start Nova Sonic stream: {e}")
+            logger.error(f"Failed to start BidiAgent: {e}")
             self._on_status(f"Connection error: {str(e)}")
             raise
 
-    async def process_audio(self, audio_bytes: bytes) -> None:
-        """Process incoming audio from the client microphone.
-
-        In the full implementation, this feeds audio into the Nova Sonic
-        bidirectional stream. For now, we buffer audio chunks.
-        """
-        if not self._is_active:
-            # Auto-start session on first audio
-            try:
-                await self._start_stream()
-            except Exception:
-                return
-
-        self._audio_buffer.extend(audio_bytes)
-
-        # In Phase 1, we'll implement the full Strands BidiAgent integration.
-        # For now, when we accumulate enough audio (~2 seconds), we process it.
-        # 16kHz * 2 bytes * 2 seconds = 64000 bytes
-        if len(self._audio_buffer) >= 64000:
-            await self._process_buffered_audio()
-
-    async def _process_buffered_audio(self) -> None:
-        """Process buffered audio through Nova Sonic.
-
-        This is a simplified version. The full implementation will use
-        Strands BidiAgent for continuous bidirectional streaming.
-        """
-        audio_data = bytes(self._audio_buffer)
-        self._audio_buffer.clear()
-
-        self._on_status("Processing speech...")
-
+    async def _event_loop(self) -> None:
+        """Async receive loop — maps BidiAgent events to Socket.IO callbacks."""
         try:
-            # Use Bedrock Converse API as a stepping stone before full BidiAgent
-            response = self._bedrock.converse(
-                modelId=NOVA_SONIC_MODEL_ID,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "audio": {
-                                    "format": "pcm",
-                                    "source": {"bytes": audio_data},
-                                }
-                            }
-                        ],
-                    }
-                ],
-                system=[{"text": SYSTEM_PROMPT}],
-                toolConfig={"tools": self._tools},
-                inferenceConfig={"maxTokens": 1024},
-            )
+            async for event in self._agent.receive():
+                event_type = event.get("type", "")
 
-            await self._handle_response(response)
+                if event_type == "bidi_connection_start":
+                    self._on_status("Connected — listening...")
+                    logger.info(f"Nova Sonic connected: {event.get('connection_id', '')}")
 
+                elif event_type == "bidi_audio_stream":
+                    # Forward base64-encoded audio chunk to client
+                    audio_b64 = event.get("audio", "")
+                    if audio_b64:
+                        self._on_audio(audio_b64)
+
+                elif event_type == "bidi_transcript_stream":
+                    text = event.get("text", "")
+                    role = event.get("role", "assistant")
+                    is_final = event.get("is_final", False)
+                    if text and is_final:
+                        self._on_transcript(text, role)
+
+                elif event_type == "bidi_connection_restart":
+                    self._on_status("Reconnecting...")
+                    logger.info("Nova Sonic connection restarting (8-min timeout)")
+
+                elif event_type == "bidi_interruption":
+                    self._on_status("Listening...")
+
+                elif event_type == "bidi_response_complete":
+                    self._on_status("Listening...")
+
+                elif event_type == "bidi_error":
+                    error_msg = event.get("message", "Unknown error")
+                    logger.error(f"BidiAgent error: {error_msg}")
+                    self._on_status(f"Error: {error_msg}")
+
+                elif event_type == "bidi_connection_close":
+                    reason = event.get("reason", "unknown")
+                    logger.info(f"BidiAgent connection closed: {reason}")
+                    if reason == "user_request":
+                        self._on_status("Conversation ended")
+                    break
+
+                elif isinstance(event, ToolUseStreamEvent):
+                    tool_use = event.get("current_tool_use", {})
+                    tool_name = tool_use.get("name", "")
+                    self._on_status(f"Running: {tool_name}...")
+
+                elif isinstance(event, ToolResultEvent):
+                    self._on_status("Responding...")
+
+        except asyncio.CancelledError:
+            logger.info(f"Event loop cancelled for session {self.session_id}")
         except Exception as e:
-            logger.error(f"Error processing audio: {e}")
-            self._on_status("Error processing speech. Please try again.")
+            logger.error(f"Event loop error for session {self.session_id}: {e}")
+            self._on_status(f"Connection lost: {str(e)}")
 
-    async def process_text(self, text: str) -> None:
-        """Process text input (fallback for when voice isn't available)."""
-        self._on_transcript(text, "user")
-        self._on_status("Thinking...")
-
+    async def send_audio(self, audio_b64: str) -> None:
+        """Forward base64-encoded PCM audio from the client microphone to BidiAgent."""
         try:
-            response = self._bedrock.converse(
-                modelId=NOVA_SONIC_MODEL_ID,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [{"text": text}],
-                    }
-                ],
-                system=[{"text": SYSTEM_PROMPT}],
-                toolConfig={"tools": self._tools},
-                inferenceConfig={"maxTokens": 1024},
-            )
-
-            await self._handle_response(response)
-
+            await self._agent.send(BidiAudioInputEvent(
+                audio=audio_b64,
+                format=AUDIO_FORMAT,
+                sample_rate=AUDIO_SAMPLE_RATE,
+                channels=AUDIO_CHANNELS,
+            ))
         except Exception as e:
-            logger.error(f"Error processing text: {e}")
-            self._on_transcript(f"Sorry, I encountered an error: {str(e)}", "assistant")
-            self._on_status("Error — please try again")
+            logger.error(f"Error sending audio: {e}")
 
-    async def _handle_response(self, response: dict) -> None:
-        """Handle Bedrock Converse response — text, audio, or tool calls."""
-        output = response.get("output", {})
-        message = output.get("message", {})
-        content_blocks = message.get("content", [])
-
-        for block in content_blocks:
-            if "text" in block:
-                text = block["text"]
-                self._on_transcript(text, "assistant")
-
-            elif "toolUse" in block:
-                tool_use = block["toolUse"]
-                await self._handle_tool_call(
-                    tool_use["name"],
-                    tool_use.get("input", {}),
-                    tool_use["toolUseId"],
-                )
-
-        stop_reason = response.get("stopReason", "")
-        if stop_reason == "tool_use":
-            self._on_status("Executing action...")
-        else:
-            self._on_status("Listening...")
-
-    async def _handle_tool_call(self, tool_name: str, tool_input: dict, tool_use_id: str) -> None:
-        """Execute a tool call from Nova Sonic."""
-        logger.info(f"Tool call: {tool_name}({json.dumps(tool_input)})")
-
-        # Import tools lazily to avoid circular imports
-        from tools.browse_website import browse_website
-        from tools.read_page import read_page
-        from tools.refine_search import refine_search
-        from tools.navigate_back import navigate_back
-
-        tool_map = {
-            "browse_website": browse_website,
-            "read_page": read_page,
-            "refine_search": refine_search,
-            "navigate_back": navigate_back,
-        }
-
-        tool_fn = tool_map.get(tool_name)
-        if not tool_fn:
-            self._on_transcript(f"Unknown tool: {tool_name}", "system")
-            return
-
-        self._on_status(f"Running: {tool_name}...")
-
+    async def send_text(self, text: str) -> None:
+        """Forward text input to BidiAgent."""
         try:
-            result = await tool_fn(
-                session_id=self.session_id,
-                on_screenshot=self._on_screenshot,
-                on_status=self._on_status,
-                **tool_input,
-            )
-
-            # Feed tool result back to the model for natural response
-            self._on_transcript(result.get("summary", "Action completed."), "assistant")
-            self._on_status("Listening...")
-
+            await self._agent.send(BidiTextInputEvent(text=text, role="user"))
         except Exception as e:
-            logger.error(f"Tool {tool_name} failed: {e}")
-            self._on_transcript(f"I had trouble with that action: {str(e)}", "assistant")
-            self._on_status("Ready")
+            logger.error(f"Error sending text: {e}")
 
     async def close(self) -> None:
         """Clean up the voice session."""
-        self._is_active = False
-        self._audio_buffer.clear()
-        if self._stream:
+        # Cancel the receive loop
+        if self._receive_task and not self._receive_task.done():
+            self._receive_task.cancel()
             try:
-                self._stream.close()
-            except Exception:
+                await self._receive_task
+            except asyncio.CancelledError:
                 pass
-            self._stream = None
+
+        # Stop the BidiAgent
+        try:
+            await self._agent.stop()
+        except Exception as e:
+            logger.error(f"Error stopping BidiAgent: {e}")
+
+        # Clean up browser session (may block — run in thread)
+        from tools.browse_website import cleanup_browser
+        await asyncio.to_thread(cleanup_browser, self.session_id)
+
         logger.info(f"Voice agent closed for session {self.session_id}")
