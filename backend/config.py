@@ -32,7 +32,10 @@ CORS_ORIGINS = [
     f"http://localhost:{FRONTEND_PORT}",
     "http://localhost:5173",
     "http://localhost:3000",
+    os.getenv("PRODUCTION_URL", ""),
 ]
+# Filter empty strings
+CORS_ORIGINS = [o for o in CORS_ORIGINS if o]
 
 # Session limits
 MAX_CONCURRENT_SESSIONS = 3
