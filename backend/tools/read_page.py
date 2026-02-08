@@ -50,14 +50,19 @@ def read_page(focus: str = "main content", tool_context: ToolContext = None) -> 
         on_status("Reading page content...")
 
     try:
-        from tools.browse_website import _browsers
+        from tools.browse_website import _browsers, _run_on_session_thread
 
         browser = _browsers.get(session_id)
         if not browser:
             return "No browser session is active. Please ask me to navigate to a website first."
 
-        # Get screenshot
-        screenshot = browser.screenshot()
+        # Get screenshot via Playwright page API on the session thread
+        # Use JPEG format to match Nova 2 Lite's expected input
+        screenshot = _run_on_session_thread(
+            session_id,
+            lambda: browser.page.screenshot(type="jpeg", quality=80),
+            timeout_sec=10,
+        )
         if not screenshot:
             return "I couldn't capture the current page. Please try again."
 
