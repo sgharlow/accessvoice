@@ -13,21 +13,34 @@ from config import NOVA_ACT_API_KEY
 
 logger = logging.getLogger("accessvoice.tools.browse")
 
-# Per-session browser instances (managed by session_manager)
+# Per-session browser instances and their dedicated thread executors.
+# Nova Act (Playwright) uses greenlets — all calls on a NovaAct instance
+# MUST happen on the same thread that created it.
 _browsers: dict[str, object] = {}
+_executors: dict[str, ThreadPoolExecutor] = {}
 _browsers_lock = threading.Lock()
 
 # Timeout for a single Nova Act step (seconds)
-_ACT_STEP_TIMEOUT = 60
+_ACT_STEP_TIMEOUT = 90
 # Max retries per step (original + N retries)
 _MAX_RETRIES = 2
 
 
-def _run_with_timeout(fn, timeout_sec: int = _ACT_STEP_TIMEOUT):
-    """Run a blocking callable with a timeout. Returns result or raises FuturesTimeout."""
-    with ThreadPoolExecutor(max_workers=1) as pool:
-        future = pool.submit(fn)
-        return future.result(timeout=timeout_sec)
+def _get_executor(session_id: str) -> ThreadPoolExecutor:
+    """Get or create a dedicated single-thread executor for a session."""
+    with _browsers_lock:
+        if session_id not in _executors:
+            _executors[session_id] = ThreadPoolExecutor(
+                max_workers=1, thread_name_prefix=f"nova-act-{session_id[:8]}"
+            )
+        return _executors[session_id]
+
+
+def _run_on_session_thread(session_id: str, fn, timeout_sec: int = _ACT_STEP_TIMEOUT):
+    """Run a callable on the session's dedicated thread. All Nova Act calls go through here."""
+    executor = _get_executor(session_id)
+    future = executor.submit(fn)
+    return future.result(timeout=timeout_sec)
 
 
 @tool(context=True)
@@ -53,32 +66,43 @@ def browse_website(url: str, action: str, tool_context: ToolContext) -> str:
     try:
         from nova_act import NovaAct
 
-        # Get or create browser for this session
+        # Get or create browser for this session — all on the session's dedicated thread
         with _browsers_lock:
             browser = _browsers.get(session_id)
         if browser is None:
             if on_status:
                 on_status("Starting browser...")
-            browser = NovaAct(
-                starting_page=url,
-                nova_act_api_key=NOVA_ACT_API_KEY,
-                headless=True,
-            )
-            browser.start()
+
+            def _create_browser():
+                b = NovaAct(
+                    starting_page=url,
+                    nova_act_api_key=NOVA_ACT_API_KEY,
+                    headless=True,
+                )
+                b.start()
+                return b
+
+            browser = _run_on_session_thread(session_id, _create_browser, timeout_sec=120)
             with _browsers_lock:
                 _browsers[session_id] = browser
         else:
             # Navigate to new URL if different
             try:
-                _run_with_timeout(lambda: browser.act(f"Navigate to {url}", max_steps=3))
+                _run_on_session_thread(
+                    session_id,
+                    lambda: browser.act(f"Navigate to {url}", max_steps=3),
+                )
             except FuturesTimeout:
                 logger.warning(f"Navigation to {url} timed out")
                 if on_status:
                     on_status("Page took too long, retrying...")
-                _run_with_timeout(lambda: browser.act(f"Navigate to {url}", max_steps=3))
+                _run_on_session_thread(
+                    session_id,
+                    lambda: browser.act(f"Navigate to {url}", max_steps=3),
+                )
 
         # Push initial screenshot
-        _push_screenshot(browser, on_screenshot)
+        _push_screenshot(session_id, browser, on_screenshot)
 
         if on_status:
             on_status(f"Working on it: {action[:60]}...")
@@ -92,10 +116,10 @@ def browse_website(url: str, action: str, tool_context: ToolContext) -> str:
                 on_status(f"{step_label}: {step[:50]}...")
             logger.info(f"Executing step {i + 1}: {step}")
 
-            success = _execute_step_with_retries(browser, step, on_status, on_screenshot)
+            success = _execute_step_with_retries(session_id, browser, step, on_status, on_screenshot)
 
             if not success:
-                _push_screenshot(browser, on_screenshot)
+                _push_screenshot(session_id, browser, on_screenshot)
                 return f"I was able to partially complete the task but got stuck at: {step}. You can ask me to try a different approach."
 
         # Get final page content for summary
@@ -121,7 +145,7 @@ def browse_website(url: str, action: str, tool_context: ToolContext) -> str:
         return f"I had trouble accessing {url}. {_friendly_error(e)}"
 
 
-def _execute_step_with_retries(browser, step: str, on_status, on_screenshot) -> bool:
+def _execute_step_with_retries(session_id: str, browser, step: str, on_status, on_screenshot) -> bool:
     """Execute a Nova Act step with retries and timeout. Returns True on success."""
     rephrasings = [
         step,
@@ -131,8 +155,11 @@ def _execute_step_with_retries(browser, step: str, on_status, on_screenshot) -> 
 
     for attempt, instruction in enumerate(rephrasings[:_MAX_RETRIES + 1]):
         try:
-            result = _run_with_timeout(lambda inst=instruction: browser.act(inst, max_steps=5))
-            _push_screenshot(browser, on_screenshot)
+            result = _run_on_session_thread(
+                session_id,
+                lambda inst=instruction: browser.act(inst, max_steps=5),
+            )
+            _push_screenshot(session_id, browser, on_screenshot)
 
             if result.success:
                 return True
@@ -150,12 +177,14 @@ def _execute_step_with_retries(browser, step: str, on_status, on_screenshot) -> 
     return False
 
 
-def _push_screenshot(browser, on_screenshot) -> None:
+def _push_screenshot(session_id: str, browser, on_screenshot) -> None:
     """Capture and push a screenshot if callback is available."""
     if not on_screenshot:
         return
     try:
-        screenshot = browser.screenshot()
+        screenshot = _run_on_session_thread(
+            session_id, lambda: browser.screenshot(), timeout_sec=10
+        )
         if screenshot:
             img_b64 = base64.b64encode(screenshot).decode("utf-8")
             on_screenshot(img_b64)
@@ -189,11 +218,16 @@ def _friendly_error(e: Exception) -> str:
 
 
 def cleanup_browser(session_id: str) -> None:
-    """Close and clean up a browser session."""
+    """Close and clean up a browser session and its dedicated thread."""
     with _browsers_lock:
         browser = _browsers.pop(session_id, None)
+        executor = _executors.pop(session_id, None)
     if browser:
         try:
-            browser.stop()
+            if executor:
+                future = executor.submit(browser.stop)
+                future.result(timeout=15)
         except Exception as e:
             logger.error(f"Error closing browser for {session_id}: {e}")
+    if executor:
+        executor.shutdown(wait=False)

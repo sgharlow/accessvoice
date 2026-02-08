@@ -1,6 +1,5 @@
 """refine_search tool — Adjusts filters/search criteria on the current page via Nova Act."""
 
-import base64
 import logging
 import time
 from concurrent.futures import TimeoutError as FuturesTimeout
@@ -31,7 +30,7 @@ def refine_search(refinement: str, tool_context: ToolContext) -> str:
         on_status(f"Adjusting filters: {refinement[:50]}...")
 
     try:
-        from tools.browse_website import _browsers, _run_with_timeout, _push_screenshot
+        from tools.browse_website import _browsers, _run_on_session_thread, _push_screenshot
 
         browser = _browsers.get(session_id)
         if not browser:
@@ -45,8 +44,11 @@ def refine_search(refinement: str, tool_context: ToolContext) -> str:
 
         for attempt, instruction in enumerate(rephrasings):
             try:
-                result = _run_with_timeout(lambda inst=instruction: browser.act(inst, max_steps=5))
-                _push_screenshot(browser, on_screenshot)
+                result = _run_on_session_thread(
+                    session_id,
+                    lambda inst=instruction: browser.act(inst, max_steps=5),
+                )
+                _push_screenshot(session_id, browser, on_screenshot)
 
                 if result.success:
                     if on_status:
