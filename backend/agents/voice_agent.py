@@ -5,6 +5,7 @@ Tool calls (browse, read_page, etc.) are triggered mid-conversation by voice com
 """
 
 import asyncio
+import base64
 import logging
 from typing import Callable, Optional
 
@@ -51,6 +52,10 @@ class VoiceAgent:
         self._on_status = on_status
         self._on_screenshot = on_screenshot
         self._receive_task: Optional[asyncio.Task] = None
+        self._keepalive_task: Optional[asyncio.Task] = None
+
+        # Pre-compute a 100ms silent audio frame (16kHz, 16-bit mono = 3200 bytes)
+        self._silence_b64 = base64.b64encode(b"\x00" * 3200).decode("utf-8")
 
         # Build the BidiNovaSonicModel targeting us-east-1
         self._model = BidiNovaSonicModel(
@@ -90,8 +95,9 @@ class VoiceAgent:
                 "on_screenshot": self._on_screenshot,
                 "on_status": self._on_status,
             })
-            # Spawn background receive loop
+            # Spawn background receive loop and audio keepalive
             self._receive_task = asyncio.create_task(self._event_loop())
+            self._keepalive_task = asyncio.create_task(self._audio_keepalive())
             logger.info(f"BidiAgent started for session {self.session_id}")
 
         except Exception as e:
@@ -158,6 +164,27 @@ class VoiceAgent:
             logger.error(f"Event loop error for session {self.session_id}: {e}")
             self._on_status(f"Connection lost: {str(e)}")
 
+    async def _audio_keepalive(self) -> None:
+        """Send silent audio frames to keep the Nova Sonic connection alive.
+
+        Nova Sonic requires continuous audio input — without it the stream
+        times out. This sends 100ms of silence every 200ms when no real
+        audio is flowing.
+        """
+        try:
+            while True:
+                await asyncio.sleep(0.2)
+                await self._agent.send(BidiAudioInputEvent(
+                    audio=self._silence_b64,
+                    format=AUDIO_FORMAT,
+                    sample_rate=AUDIO_SAMPLE_RATE,
+                    channels=AUDIO_CHANNELS,
+                ))
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.debug(f"Keepalive stopped: {e}")
+
     async def send_audio(self, audio_b64: str) -> None:
         """Forward base64-encoded PCM audio from the client microphone to BidiAgent."""
         try:
@@ -179,13 +206,14 @@ class VoiceAgent:
 
     async def close(self) -> None:
         """Clean up the voice session."""
-        # Cancel the receive loop
-        if self._receive_task and not self._receive_task.done():
-            self._receive_task.cancel()
-            try:
-                await self._receive_task
-            except asyncio.CancelledError:
-                pass
+        # Cancel background tasks
+        for task in (self._keepalive_task, self._receive_task):
+            if task and not task.done():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
 
         # Stop the BidiAgent
         try:
