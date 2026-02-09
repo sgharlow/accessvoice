@@ -141,8 +141,9 @@ async def audio_chunk(sid: str, data: dict):
 async def stop_session(sid: str, data: dict = None):
     """Client requests to end the voice session."""
     logger.info(f"Stopping session for {sid}")
-    await sessions.cleanup(sid)
+    # Ack immediately — cleanup runs in background so the client isn't blocked
     await sio.emit("session_stopped", {}, to=sid)
+    asyncio.create_task(sessions.cleanup(sid))
 
 
 @sio.event

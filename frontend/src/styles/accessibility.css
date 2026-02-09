@@ -379,7 +379,6 @@ body {
   margin-top: 8px;
   font-size: 0.75rem;
   color: var(--text-secondary);
-  opacity: 0.5;
 }
 
 .keyboard-hints kbd {
