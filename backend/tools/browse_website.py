@@ -143,7 +143,7 @@ def browse_website(url: str, action: str, tool_context: ToolContext) -> str:
 
         return f"Done! I've completed the action on {url}. {_summarize_result(action, page_text)}"
 
-    except ImportError:
+    except ImportError as e:
         logger.warning("Nova Act not installed — returning mock result for development")
         if on_status:
             on_status("Browsing (dev mode)...")

@@ -29,6 +29,9 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Install Playwright's Chromium browser (Nova Act uses Playwright internally)
+RUN python -m playwright install chromium
+
 COPY . .
 
 ENV DISPLAY=:99
@@ -39,5 +42,5 @@ EXPOSE 8000
 # in headed mode (headless=False) which avoids bot detection on sites
 # like Zillow that fingerprint headless browsers.
 COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
 CMD ["/entrypoint.sh"]
