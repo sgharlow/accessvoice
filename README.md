@@ -4,27 +4,35 @@ AccessVoice lets visually impaired users browse the web through natural voice co
 
 Built with three Amazon Nova models working together: **Nova Sonic** for real-time bidirectional voice, **Nova Act** for autonomous browser control, and **Nova 2 Lite** for page understanding.
 
+> **Hackathon**: [Amazon Nova AI Hackathon](https://amazon-nova.devpost.com) | **Category**: Best Voice AI, Best UI Automation
+
+## Demo
+
+[Watch the demo video](#) <!-- Replace with Devpost/YouTube link after upload -->
+
+The demo shows three real browsing scenarios — apartment search on Zillow, shopping on Amazon, and reading news on CNN — all driven by voice commands through the AccessVoice interface.
+
 ## Architecture
 
 ```
 User (Voice/Text)
-      |
+      │
   React Frontend ──── Socket.IO ──── FastAPI Backend
-      |                                    |
+      │                                    │
   Audio Playback                     Nova Sonic BidiAgent
   Browser View                       (us-east-1, real-time voice)
-  Transcript Log                           |
+  Transcript Log                           │
                                      Tool Calls:
                                        ├── browse_website (Nova Act)
                                        ├── read_page (Nova 2 Lite, us-west-2)
                                        ├── refine_search (Nova Act)
                                        └── navigate_back (Nova Act)
-                                           |
+                                           │
                                      Audio + Transcript + Screenshot
                                        → Socket.IO → Frontend → User
 ```
 
-See [architecture.md](architecture.md) for a detailed Mermaid diagram.
+See [architecture.md](architecture.md) for detailed Mermaid diagrams including data flow sequence.
 
 ## Nova Models Used
 
@@ -67,7 +75,7 @@ See [architecture.md](architecture.md) for a detailed Mermaid diagram.
    http://localhost:5173
    ```
 
-5. **Start a voice session** — click the session button or press `Ctrl+Shift+S`, then speak naturally.
+5. **Start a voice session** — click the session button or press `Ctrl+Shift+S`, then speak naturally or type a command.
 
 ## Deploy to EC2
 
@@ -78,7 +86,7 @@ For production deployment on an EC2 instance (t3.xlarge recommended):
 bash deploy/ec2-setup.sh
 ```
 
-This script installs Docker, clones the repo, builds production images, and starts the app on port 80. See [deploy/](deploy/) for details.
+This installs Docker, clones the repo, builds production images (Nginx + backend), and starts the app on port 80. See [deploy/](deploy/) for Nginx config and Dockerfile.
 
 ## Demo Scenarios
 
@@ -86,7 +94,24 @@ This script installs Docker, clones the repo, builds production images, and star
 2. **Online shopping**: "Find me a winter jacket on Amazon under $100"
 3. **News browsing**: "What's the latest news on CNN?"
 
-Each scenario demonstrates voice-driven browsing, page reading, search refinement, and navigation — all without touching a keyboard or mouse.
+Each scenario demonstrates voice-driven browsing, live screenshot streaming, page reading, and natural voice responses — all without touching a keyboard or mouse.
+
+## Testing
+
+The project includes automated end-to-end tests covering all demo scenarios and system behavior:
+
+```bash
+# Run individual E2E tests (requires backend running on port 8000)
+node tests/test_session_lifecycle.mjs    # Session start/stop/restart (7 checks)
+node tests/test_concurrent_sessions.mjs  # Multi-user isolation (4 checks)
+node tests/test_error_recovery.mjs       # Graceful error handling (2 checks)
+node tests/test_read_page.mjs            # Nova 2 Lite vision analysis (2 checks)
+node tests/test_amazon.mjs               # Amazon shopping scenario
+node tests/test_cnn.mjs                  # CNN news scenario
+node test_zillow.mjs                     # Zillow apartment search
+```
+
+Accessibility audit: 0 WCAG violations verified via axe-core (38 rules checked).
 
 ## Keyboard Shortcuts
 
@@ -98,36 +123,44 @@ Each scenario demonstrates voice-driven browsing, page reading, search refinemen
 
 ## Tech Stack
 
-- **Backend**: Python 3.12, FastAPI, python-socketio, Strands SDK, Nova Act SDK
+- **Backend**: Python 3.12, FastAPI, python-socketio, Strands SDK, Nova Act SDK, boto3
 - **Frontend**: React 18, TypeScript, Vite, Socket.IO client
-- **Infrastructure**: Docker, Nginx, WebSocket proxying
-- **AI Models**: Amazon Nova Sonic, Nova Act, Nova 2 Lite
+- **Infrastructure**: Docker, Nginx, Xvfb (virtual display for Chrome)
+- **AI Models**: Amazon Nova 2 Sonic, Nova Act, Nova 2 Lite
+- **Testing**: Custom E2E suite (Socket.IO + Playwright), axe-core accessibility audit
 
 ## Project Structure
 
 ```
 accessvoice/
 ├── backend/
-│   ├── agents/voice_agent.py    # BidiAgent orchestration
-│   ├── tools/                   # browse, read, refine, navigate
+│   ├── agents/voice_agent.py    # BidiAgent orchestration + event loop
+│   ├── tools/                   # browse_website, read_page, refine_search, navigate_back
 │   ├── services/                # Session management, screenshot streaming
-│   ├── prompts/                 # System prompt for voice persona
-│   ├── config.py                # AWS regions, model IDs, voice settings
+│   ├── prompts/                 # System prompt for accessible voice persona
+│   ├── config.py                # AWS regions, model IDs, audio settings
 │   └── main.py                  # FastAPI + Socket.IO server
 ├── frontend/
 │   ├── src/
-│   │   ├── components/          # VoiceControls, BrowserView, Transcript, etc.
+│   │   ├── components/          # VoiceControls, BrowserView, TranscriptPanel, etc.
 │   │   ├── hooks/               # useSocketIO, useAudioStream
-│   │   └── App.tsx              # Main app layout
+│   │   └── App.tsx              # Main app with AudioQueue playback
 │   └── package.json
 ├── deploy/
 │   ├── nginx.conf               # Reverse proxy + WebSocket + gzip
-│   ├── Dockerfile.nginx         # Multi-stage: build frontend + serve
-│   └── ec2-setup.sh             # One-command EC2 deployment
+│   ├── Dockerfile.nginx          # Multi-stage: build frontend + serve static
+│   └── ec2-setup.sh             # One-command EC2 provisioning
+├── tests/                       # E2E test suite (7 test files)
 ├── docker-compose.yml           # Local development
-├── docker-compose.prod.yml      # Production (Nginx + backend, no dev volumes)
+├── docker-compose.prod.yml      # Production (Nginx + backend)
 └── .env.example
 ```
+
+## Judge Access
+
+If reviewing this submission, the repo is accessible to:
+- `testing@devpost.com`
+- `Amazon-Nova-hackathon@amazon.com`
 
 ## License
 
