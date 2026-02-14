@@ -16,8 +16,7 @@
     "<all_urls>"
   ],
   "background": {
-    "service_worker": "background.bundle.js",
-    "type": "module"
+    "service_worker": "background.bundle.js"
   },
   "side_panel": {
     "default_path": "sidepanel/index.html"

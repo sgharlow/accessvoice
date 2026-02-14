@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { io, Socket } from "socket.io-client";
 
-const isExtension = !!(window as any).__ACCESSVOICE_EXTENSION__;
+function checkExtension() {
+  return !!(window as any).__ACCESSVOICE_EXTENSION__;
+}
 
 interface UseSocketIOOptions {
   onTranscript: (text: string, role: "user" | "assistant" | "system") => void;
@@ -20,6 +22,7 @@ export function useSocketIO(options: UseSocketIOOptions) {
   optionsRef.current = options;
 
   useEffect(() => {
+    const isExtension = checkExtension();
     if (isExtension) {
       // Extension mode: communicate via chrome.runtime messaging
       const listener = (message: any) => {
@@ -117,7 +120,7 @@ export function useSocketIO(options: UseSocketIOOptions) {
   }, []);
 
   const startSession = useCallback(() => {
-    if (isExtension) {
+    if (checkExtension()) {
       chrome.runtime.sendMessage({ type: "start_session" });
     } else {
       socketRef.current?.emit("start_session", {});
@@ -125,7 +128,7 @@ export function useSocketIO(options: UseSocketIOOptions) {
   }, []);
 
   const stopSession = useCallback(() => {
-    if (isExtension) {
+    if (checkExtension()) {
       chrome.runtime.sendMessage({ type: "stop_session" });
     } else {
       socketRef.current?.emit("stop_session", {});
@@ -133,7 +136,7 @@ export function useSocketIO(options: UseSocketIOOptions) {
   }, []);
 
   const sendAudio = useCallback((audioB64: string) => {
-    if (isExtension) {
+    if (checkExtension()) {
       chrome.runtime.sendMessage({ type: "audio_chunk", data: audioB64 });
     } else {
       socketRef.current?.emit("audio_chunk", { data: audioB64 });
@@ -141,7 +144,7 @@ export function useSocketIO(options: UseSocketIOOptions) {
   }, []);
 
   const sendText = useCallback((text: string) => {
-    if (isExtension) {
+    if (checkExtension()) {
       chrome.runtime.sendMessage({ type: "text_input", text });
     } else {
       socketRef.current?.emit("text_input", { text });

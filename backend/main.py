@@ -77,7 +77,7 @@ async def disconnect(sid: str):
 
 
 @sio.event
-async def start_session(sid: str, data: dict):
+async def start_session(sid: str, data: dict = None):
     """Client requests a new voice session."""
     if sessions.active_count >= MAX_CONCURRENT_SESSIONS:
         await sio.emit("error", {"message": "Server at capacity. Please try again later."}, to=sid)

@@ -8,13 +8,17 @@ let currentSessionId = null;
 // --- Offscreen Document Management ---
 
 async function ensureOffscreen() {
-  const existing = await chrome.offscreen.hasDocument();
-  if (!existing) {
-    await chrome.offscreen.createDocument({
-      url: "offscreen.html",
-      reasons: ["AUDIO_PLAYBACK", "USER_MEDIA"],
-      justification: "Microphone capture and audio playback for voice assistant",
-    });
+  try {
+    const existing = await chrome.offscreen.hasDocument();
+    if (!existing) {
+      await chrome.offscreen.createDocument({
+        url: "offscreen.html",
+        reasons: ["AUDIO_PLAYBACK", "USER_MEDIA"],
+        justification: "Microphone capture and audio playback for voice assistant",
+      });
+    }
+  } catch (err) {
+    console.error("[AV] ensureOffscreen error:", err);
   }
 }
 
@@ -36,6 +40,10 @@ function connectToBackend() {
 
   socket.on("disconnect", () => {
     broadcastToSidepanel({ type: "connection_status", connected: false });
+  });
+
+  socket.on("connect_error", (err) => {
+    console.error("[AV] Socket.IO connect_error:", err.message);
   });
 
   // Forward server events to sidepanel (audio handled separately below)
@@ -115,7 +123,9 @@ function broadcastToSidepanel(message) {
 // Handle messages from sidepanel and offscreen document
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "connect") {
-    ensureOffscreen().then(() => connectToBackend());
+    ensureOffscreen().then(() => connectToBackend()).catch((err) => {
+      console.error("[AV] connect flow error:", err);
+    });
     sendResponse({ ok: true });
   } else if (message.type === "start_session") {
     socket?.emit("start_session");

@@ -4,7 +4,7 @@
   "description": "",
   "main": "background.js",
   "scripts": {
-    "build": "esbuild background.js --bundle --outfile=background.bundle.js --format=esm",
+    "build": "esbuild background.js --bundle --outfile=background.bundle.js --format=iife",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
