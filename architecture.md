@@ -6,11 +6,11 @@
 graph TD
     User["User (Voice / Text)"]
 
-    subgraph Frontend["React Frontend (Vite)"]
-        UI["App UI<br/>VoiceControls, BrowserView,<br/>TranscriptPanel, TextInput"]
-        AudioStream["useAudioStream<br/>MediaRecorder → PCM chunks"]
-        SocketHook["useSocketIO<br/>Socket.IO client"]
-        AudioQueue["AudioQueue<br/>PCM → AudioContext playback"]
+    subgraph Extension["Chrome Extension (Manifest V3)"]
+        Sidepanel["Sidepanel UI<br/>VoiceControls, BrowserView,<br/>TranscriptPanel, TextInput"]
+        ContentScript["Content Script<br/>DOM actions: click, type,<br/>scroll, screenshot capture"]
+        ServiceWorker["Service Worker<br/>Socket.IO client,<br/>action dispatch, screenshot relay"]
+        Offscreen["Offscreen Document<br/>Audio capture + playback<br/>via Web Audio API"]
     end
 
     subgraph Backend["FastAPI Backend"]
@@ -24,39 +24,41 @@ graph TD
         ToolRouter["Async Tool Calling<br/>(mid-conversation)"]
     end
 
-    subgraph Tools["Browser Tools"]
-        Browse["browse_website<br/>Nova Act SDK"]
+    subgraph Tools["Backend Tools"]
+        Browse["browse_website<br/>Screenshot → Action Planner → Extension"]
+        ActionPlanner["action_planner<br/>Nova 2 Lite vision planning"]
         ReadPage["read_page<br/>Nova 2 Lite (us-west-2)"]
-        Refine["refine_search<br/>Nova Act SDK"]
-        NavBack["navigate_back<br/>Nova Act SDK"]
     end
 
-    Browser["Headless Chrome<br/>(in Docker)"]
+    UserBrowser["User's Active Tab<br/>(any website)"]
 
-    User -->|"Speech / typed text"| UI
-    UI --> AudioStream
-    AudioStream -->|"base64 PCM"| SocketHook
-    UI -->|"text commands"| SocketHook
-    SocketHook -->|"Socket.IO"| SIO
+    User -->|"Speech / typed text"| Sidepanel
+    Sidepanel --> Offscreen
+    Offscreen -->|"base64 PCM"| ServiceWorker
+    Sidepanel -->|"text commands"| ServiceWorker
+    ServiceWorker -->|"Socket.IO"| SIO
     SIO --> SessionMgr
     SessionMgr --> VoiceAgent
     VoiceAgent -->|"audio stream"| BidiAgent
     BidiAgent -->|"tool_use events"| ToolRouter
     ToolRouter --> Browse
     ToolRouter --> ReadPage
-    ToolRouter --> Refine
-    ToolRouter --> NavBack
-    Browse --> Browser
-    Refine --> Browser
-    NavBack --> Browser
-    Browser -->|"screenshot"| ReadPage
+    Browse -->|"request screenshot"| ServiceWorker
+    ServiceWorker -->|"capture"| ContentScript
+    ContentScript -->|"screenshot"| ServiceWorker
+    ServiceWorker -->|"screenshot data"| Browse
+    Browse --> ActionPlanner
+    ActionPlanner -->|"action command"| Browse
+    Browse -->|"execute action"| ServiceWorker
+    ServiceWorker -->|"click/type/scroll"| ContentScript
+    ContentScript --> UserBrowser
     BidiAgent -->|"audio + transcript"| VoiceAgent
     VoiceAgent -->|"Socket.IO events"| SIO
-    SIO --> SocketHook
-    SocketHook --> AudioQueue
-    SocketHook -->|"transcript, screenshot,<br/>status updates"| UI
-    AudioQueue -->|"spoken response"| User
-    UI -->|"visual feedback"| User
+    SIO --> ServiceWorker
+    ServiceWorker --> Offscreen
+    ServiceWorker -->|"transcript, screenshot,<br/>status updates"| Sidepanel
+    Offscreen -->|"spoken response"| User
+    Sidepanel -->|"visual feedback"| User
 ```
 
 ## Data Flow Detail
@@ -64,71 +66,94 @@ graph TD
 ```mermaid
 sequenceDiagram
     participant U as User
-    participant F as React Frontend
-    participant S as Socket.IO
+    participant SP as Sidepanel UI
+    participant SW as Service Worker
+    participant CS as Content Script
     participant B as FastAPI Backend
     participant NS as Nova Sonic
-    participant NA as Nova Act
     participant NL as Nova 2 Lite
 
-    U->>F: Click "Start Session"
-    F->>S: start_session
-    S->>B: Create VoiceAgent
+    U->>SP: Click "Start Session"
+    SP->>SW: chrome.runtime.sendMessage(start_session)
+    SW->>B: Socket.IO: start_session
     B->>NS: BidiAgent.start() (us-east-1)
     NS-->>B: Connection established
-    B-->>F: session_started
-    F-->>U: "Connected — listening..."
+    B-->>SW: session_started
+    SW-->>SP: session_started
+    SP-->>U: "Connected — listening..."
 
-    U->>F: "Find apartments in Seattle on Zillow"
-    F->>S: audio_chunk (base64 PCM)
-    S->>B: Forward to BidiAgent
-    B->>NS: BidiAudioInputEvent
-    NS-->>B: transcript (user speech)
-    B-->>F: transcript event
+    U->>SP: "Find apartments in Seattle"
+    SP->>SW: chrome.runtime.sendMessage(text_input)
+    SW->>B: Socket.IO: text_input
+    B->>NS: Text → BidiAgent
+    NS-->>B: transcript (user text)
+    B-->>SW: transcript event
     NS->>B: tool_use: browse_website
-    B-->>F: status: "Browsing the web..."
-    B->>NA: browse_website("zillow.com", "search apartments Seattle")
-    NA-->>B: Screenshot + result
-    B-->>F: screenshot event
+    B-->>SW: status: "Browsing the web..."
+
+    Note over B,CS: Multi-step browse loop (up to 10 steps)
+
+    B->>SW: request_screenshot
+    SW->>CS: captureVisibleTab + getPageInfo
+    CS-->>SW: screenshot + page metadata
+    SW-->>B: screenshot_response
+
+    B->>NL: Action Planner (screenshot + goal)
+    NL-->>B: {action: "navigate", url: "apartments.com/..."}
+
+    B->>SW: execute_action(navigate)
+    SW->>CS: Navigate to URL
+    CS-->>SW: Action complete
+    SW-->>B: action_response
+
+    Note over B,CS: Repeat: screenshot → plan → act until done
+
+    B->>NL: read_page (final screenshot)
+    NL-->>B: Accessible page summary
+
     NS-->>B: Audio response: "I found several listings..."
-    B-->>F: audio event (base64 PCM)
-    F-->>U: Plays spoken response + shows screenshot
+    B-->>SW: audio event (base64 PCM)
+    SW-->>SP: audio data
+    SP-->>U: Plays spoken response + shows transcript
 ```
 
 ## Component Responsibilities
 
 | Component | Technology | Responsibility |
 |-----------|-----------|----------------|
-| **Frontend** | React 18 + TypeScript + Vite | Audio capture/playback, Socket.IO transport, visual feedback |
+| **Sidepanel** | React 18 + TypeScript | Voice controls, transcript display, text input, browser view |
+| **Service Worker** | Chrome MV3 + Socket.IO | Backend communication, screenshot relay, action dispatch |
+| **Content Script** | Vanilla JS | DOM actions (click, type, scroll), screenshot capture, page info |
+| **Offscreen Document** | Web Audio API | Microphone capture (PCM), audio playback queue |
 | **Backend** | FastAPI + python-socketio | Session management, VoiceAgent lifecycle, event routing |
 | **VoiceAgent** | Strands BidiAgent | Nova Sonic connection, event loop, tool dispatch |
-| **browse_website** | Nova Act SDK | Navigate to URLs, perform browser actions |
-| **read_page** | Nova 2 Lite (Bedrock) | Analyze screenshots for accessibility summaries |
-| **refine_search** | Nova Act SDK | Adjust filters/queries on current page |
-| **navigate_back** | Nova Act SDK | Browser history navigation |
-| **Nginx** | nginx:alpine | Reverse proxy, WebSocket upgrade, static file serving |
+| **browse_website** | Extension coordination | Multi-step browsing: screenshot → plan → act loop |
+| **action_planner** | Nova 2 Lite (Bedrock) | Vision-based DOM action planning from screenshots |
+| **read_page** | Nova 2 Lite (Bedrock) | Accessibility-friendly page summaries from screenshots |
 
-## Deployment Topology
+## Extension Architecture
 
 ```mermaid
 graph LR
-    Internet["Internet<br/>(Port 80)"]
-    subgraph EC2["EC2 Instance (t3.xlarge)"]
-        Nginx["Nginx<br/>:80"]
-        Backend["FastAPI<br/>:8000"]
-        Chrome["Headless Chrome"]
-    end
-    subgraph AWS["AWS Cloud"]
-        Sonic["Nova Sonic<br/>us-east-1"]
-        Lite["Nova 2 Lite<br/>us-west-2"]
-        Act["Nova Act<br/>API"]
+    subgraph Chrome["User's Chrome Browser"]
+        Tab["Active Tab<br/>(any website)"]
+        CS["Content Script<br/>Injected into all pages"]
+        SW["Service Worker<br/>Background orchestration"]
+        SP["Sidepanel<br/>React UI"]
+        OF["Offscreen Doc<br/>Audio I/O"]
     end
 
-    Internet --> Nginx
-    Nginx -->|"static files"| Nginx
-    Nginx -->|"/socket.io/"| Backend
-    Backend --> Chrome
-    Backend --> Sonic
-    Backend --> Lite
-    Backend --> Act
+    subgraph Cloud["Cloud Backend (AWS)"]
+        API["FastAPI<br/>:8000"]
+        Sonic["Nova Sonic<br/>us-east-1"]
+        Lite["Nova 2 Lite<br/>us-west-2"]
+    end
+
+    CS <-->|"DOM actions<br/>screenshots"| SW
+    SW <-->|"Socket.IO<br/>WebSocket"| API
+    SP <-->|"chrome.runtime<br/>messages"| SW
+    OF <-->|"chrome.runtime<br/>messages"| SW
+    CS --> Tab
+    API --> Sonic
+    API --> Lite
 ```
