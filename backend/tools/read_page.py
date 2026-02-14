@@ -42,33 +42,35 @@ def read_page(focus: str = "main content", tool_context: ToolContext = None) -> 
     Returns:
         Accessibility-focused description of the page.
     """
-    session_id = tool_context.invocation_state.get("session_id", "")
     on_screenshot = tool_context.invocation_state.get("on_screenshot")
     on_status = tool_context.invocation_state.get("on_status")
+    emit_to_client = tool_context.invocation_state.get("emit_to_client")
+    screenshot_response = tool_context.invocation_state.get("screenshot_response")
 
     if on_status:
         on_status("Reading page content...")
 
     try:
-        from tools.browse_website import _browsers, _run_on_session_thread
+        if not emit_to_client or not screenshot_response:
+            return "No connection to browser extension. Make sure the extension is installed and connected."
 
-        browser = _browsers.get(session_id)
-        if not browser:
-            return "No browser session is active. Please ask me to navigate to a website first."
+        # Request screenshot from extension
+        screenshot_response["data"] = {}
+        screenshot_response["event"].clear()
+        emit_to_client("request_screenshot", {})
 
-        # Get screenshot via Playwright page API on the session thread
-        # Use JPEG format to match Nova 2 Lite's expected input
-        screenshot = _run_on_session_thread(
-            session_id,
-            lambda: browser.page.screenshot(type="jpeg", quality=80),
-            timeout_sec=10,
-        )
-        if not screenshot:
+        if not screenshot_response["event"].wait(timeout=15):
             return "I couldn't capture the current page. Please try again."
+
+        screenshot_data = screenshot_response["data"]
+        img_b64 = screenshot_data.get("image")
+        if not img_b64:
+            return "I couldn't capture the current page. Please try again."
+
+        screenshot = base64.b64decode(img_b64)
 
         # Push screenshot to frontend
         if on_screenshot:
-            img_b64 = base64.b64encode(screenshot).decode("utf-8")
             on_screenshot(img_b64)
 
         if on_status:
@@ -117,10 +119,6 @@ def read_page(focus: str = "main content", tool_context: ToolContext = None) -> 
             on_status("Responding...")
 
         return summary or "I couldn't read the page content. Let me try again."
-
-    except ImportError:
-        logger.warning("Nova Act not available — dev mode")
-        return f"[Dev mode] Would analyze page with focus on: {focus}"
 
     except Exception as e:
         logger.error(f"Read page failed: {e}")
