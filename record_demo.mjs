@@ -1,25 +1,25 @@
 /**
- * AccessVoice Demo Video Recorder
+ * AccessVoice Demo Video Recorder (Browser Extension Version)
  *
- * Records a Playwright video of the AccessVoice UI performing 3 demo scenarios:
- * 1. Search for apartments in Seattle on Zillow
+ * Records a demo of AccessVoice Chrome Extension performing 3 scenarios:
+ * 1. Search for apartments in Seattle on Apartments.com
  * 2. Find a winter jacket on Amazon under $100
  * 3. What's the latest news on CNN?
  *
- * Uses smart completion detection instead of fixed waits.
- * Logs timestamps to demo-recording/timestamps.json for narration sync.
+ * Uses Playwright to launch Chromium with the extension loaded.
+ * Two-tab approach: sidepanel tab (recorded) + browsing tab (active target).
  *
- * Output: demo-recording/accessvoice-demo.webm
+ * Output: demo-recording/accessvoice-demo.webm + screenshots + timestamps.json
  *
  * Usage: node record_demo.mjs
- * Requires: npx playwright install chromium
+ * Requires: Backend running on localhost:8000
  */
 
 import { chromium } from "playwright";
 import fs from "fs";
 import path from "path";
 
-const FRONTEND_URL = "http://localhost:5173";
+const EXTENSION_PATH = path.resolve("extension");
 const OUTPUT_DIR = "demo-recording";
 const TIMESTAMPS_FILE = path.join(OUTPUT_DIR, "timestamps.json");
 
@@ -38,11 +38,11 @@ const SCENARIOS = [
   },
 ];
 
-// Max wait per scenario before moving on (3 minutes)
+// Max wait per scenario (3 minutes)
 const MAX_SCENARIO_WAIT_MS = 180000;
-// How often to poll for new transcript entries
+// Poll interval for transcript changes
 const POLL_INTERVAL_MS = 3000;
-// How long transcript must be stable before considering scenario done
+// Transcript stability threshold before considering done
 const STABLE_THRESHOLD_MS = 15000;
 
 const timestamps = [];
@@ -63,33 +63,22 @@ async function sleep(ms) {
 }
 
 /**
- * Count transcript entries (article elements inside the conversation log).
+ * Count transcript entries in the conversation log.
  */
 async function getTranscriptCount(page) {
-  return page.locator('[role="log"][aria-label="Conversation transcript"] [role="article"]').count();
+  return page
+    .locator('[role="log"][aria-label="Conversation transcript"] [role="article"]')
+    .count();
 }
 
 /**
- * Get the text of the last transcript entry.
- */
-async function getLastTranscriptText(page) {
-  const articles = page.locator('[role="log"][aria-label="Conversation transcript"] [role="article"]');
-  const count = await articles.count();
-  if (count === 0) return "";
-  return articles.nth(count - 1).innerText();
-}
-
-/**
- * Wait for the AI to finish responding by watching for transcript stability.
- * Considers "done" when no new transcript entries appear for STABLE_THRESHOLD_MS,
- * after at least one AI response has been received.
+ * Wait for AI to finish by watching transcript stability.
  */
 async function waitForCompletion(page, initialCount, scenarioLabel) {
   const startWait = Date.now();
   let lastCount = initialCount;
   let lastChangeTime = Date.now();
   let hasResponse = false;
-  let browsingScreenshotTaken = false;
 
   while (Date.now() - startWait < MAX_SCENARIO_WAIT_MS) {
     await sleep(POLL_INTERVAL_MS);
@@ -103,168 +92,242 @@ async function waitForCompletion(page, initialCount, scenarioLabel) {
         hasResponse = true;
       }
 
-      // Take a "browsing" screenshot when we first see AI responding
-      if (!browsingScreenshotTaken && currentCount > initialCount + 1) {
-        browsingScreenshotTaken = true;
+      if (!hasResponse && currentCount > initialCount + 1) {
         logTimestamp("first_response", scenarioLabel);
       }
     }
 
-    // Check for completion: have a response + transcript stable for threshold
-    if (hasResponse && (Date.now() - lastChangeTime) >= STABLE_THRESHOLD_MS) {
-      const lastText = await getLastTranscriptText(page);
+    if (hasResponse && Date.now() - lastChangeTime >= STABLE_THRESHOLD_MS) {
       logTimestamp("scenario_complete", `${currentCount - initialCount} entries`);
       return true;
     }
   }
 
-  console.log(`  WARNING: ${scenarioLabel} hit max wait time (${MAX_SCENARIO_WAIT_MS / 1000}s)`);
+  console.log(`  WARNING: ${scenarioLabel} hit max wait (${MAX_SCENARIO_WAIT_MS / 1000}s)`);
   logTimestamp("scenario_timeout", scenarioLabel);
   return false;
 }
 
 async function run() {
-  // Ensure output directory exists
+  // Ensure output directory
   if (!fs.existsSync(OUTPUT_DIR)) {
     fs.mkdirSync(OUTPUT_DIR, { recursive: true });
   }
 
-  // Clean old screenshots
-  const oldFiles = fs.readdirSync(OUTPUT_DIR).filter((f) => f.endsWith(".png"));
-  for (const f of oldFiles) {
+  // Clean old screenshots (keep videos for now)
+  for (const f of fs.readdirSync(OUTPUT_DIR).filter((f) => f.endsWith(".png"))) {
     fs.unlinkSync(path.join(OUTPUT_DIR, f));
   }
 
-  console.log("=== AccessVoice Demo Video Recorder ===\n");
-  console.log(`Frontend: ${FRONTEND_URL}`);
+  console.log("=== AccessVoice Demo Video Recorder (Extension) ===\n");
+  console.log(`Extension: ${EXTENSION_PATH}`);
   console.log(`Scenarios: ${SCENARIOS.length}`);
-  console.log(`Smart completion detection: ${STABLE_THRESHOLD_MS / 1000}s stability threshold`);
+  console.log(`Stability threshold: ${STABLE_THRESHOLD_MS / 1000}s`);
   console.log(`Max wait per scenario: ${MAX_SCENARIO_WAIT_MS / 1000}s`);
   console.log(`Output: ${OUTPUT_DIR}/\n`);
 
-  // Launch browser with video recording
-  const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext({
-    viewport: { width: 1920, height: 1080 },
+  // Check backend
+  try {
+    const res = await fetch("http://localhost:8000/health");
+    const health = await res.json();
+    console.log(`Backend: OK (${health.active_sessions}/${health.max_sessions} sessions)\n`);
+  } catch {
+    console.error("FAILED: Backend not reachable at http://localhost:8000");
+    process.exit(1);
+  }
+
+  // Launch Chromium with extension (headed mode required for extensions)
+  const userDataDir = path.join(
+    process.env.TEMP || "/tmp",
+    `av-demo-record-${Date.now()}`
+  );
+
+  const context = await chromium.launchPersistentContext(userDataDir, {
+    headless: false,
+    args: [
+      `--disable-extensions-except=${EXTENSION_PATH}`,
+      `--load-extension=${EXTENSION_PATH}`,
+      "--no-first-run",
+      "--disable-blink-features=AutomationControlled",
+    ],
+    viewport: { width: 1280, height: 800 },
     recordVideo: {
       dir: OUTPUT_DIR,
-      size: { width: 1920, height: 1080 },
+      size: { width: 1280, height: 800 },
     },
-    permissions: ["microphone"],
   });
 
-  const page = await context.newPage();
+  // Wait for service worker
+  console.log("[1/7] Waiting for extension service worker...");
+  let sw = context.serviceWorkers()[0];
+  if (!sw) {
+    sw = await context.waitForEvent("serviceworker", { timeout: 15000 }).catch(() => null);
+  }
+  if (!sw) {
+    console.error("FAILED: Extension service worker not detected");
+    await context.close();
+    process.exit(1);
+  }
+  const extId = sw.url().split("/")[2];
+  console.log(`  Extension loaded (ID: ${extId})`);
+
+  // Open browsing tab FIRST (this will be the "active" tab for chrome.tabs.query)
+  const browsingPage = await context.newPage();
+  await browsingPage.goto("about:blank");
+
+  // Open sidepanel in another tab
+  const sidepanelUrl = `chrome-extension://${extId}/sidepanel/index.html`;
+  const sidepanel = context.pages()[0]; // Use the first page (opened by default)
+  await sidepanel.goto(sidepanelUrl);
+
   recordingStartTime = Date.now();
 
   try {
-    // Navigate to frontend
-    console.log("[1/6] Loading frontend...");
-    await page.goto(FRONTEND_URL, { waitUntil: "networkidle" });
+    // Make browsing tab active (so chrome.tabs.query targets it, not sidepanel)
+    await browsingPage.bringToFront();
+    // Give sidepanel time to render and connect
+    await sleep(2000);
+    // Bring sidepanel to front briefly for initial screenshots
+    await sidepanel.bringToFront();
     await sleep(3000);
+
     logTimestamp("page_loaded");
 
     // Wait for Socket.IO connection
-    console.log("[2/6] Waiting for backend connection...");
+    console.log("[2/7] Waiting for backend connection...");
     try {
-      await page.getByText("Connected to server").waitFor({ timeout: 30000 });
+      await sidepanel.getByText("Connected to server").waitFor({ timeout: 30000 });
     } catch {
       console.error("FAILED: Could not connect to backend after 30s");
-      await page.screenshot({ path: path.join(OUTPUT_DIR, "error-no-connection.png") });
+      await sidepanel.screenshot({ path: path.join(OUTPUT_DIR, "error-no-connection.png") });
       return;
     }
     logTimestamp("connected");
     await sleep(2000);
 
     // Homepage screenshot
-    await page.screenshot({ path: path.join(OUTPUT_DIR, "01-homepage.png") });
+    await sidepanel.screenshot({ path: path.join(OUTPUT_DIR, "01-homepage.png") });
 
-    // Click Start Session
-    console.log("[3/6] Starting voice session...");
-    await page.getByRole("button", { name: "Start session" }).click();
+    // Start session
+    console.log("[3/7] Starting voice session...");
+    await sidepanel.getByRole("button", { name: "Start session" }).click();
     logTimestamp("session_start_clicked");
-
-    // Wait for session to be ready (text input becomes enabled)
     await sleep(5000);
-    await page.screenshot({ path: path.join(OUTPUT_DIR, "02-session-started.png") });
+    await sidepanel.screenshot({ path: path.join(OUTPUT_DIR, "02-session-started.png") });
     logTimestamp("session_ready");
     console.log("  Session started!");
 
-    // Run each demo scenario
+    // NOW make browsing tab active so browse_website targets it
+    await browsingPage.bringToFront();
+    await sleep(500);
+
+    // Run each scenario
     for (let i = 0; i < SCENARIOS.length; i++) {
       const scenario = SCENARIOS[i];
       const stepNum = i + 4;
       const scenarioNum = i + 1;
-      console.log(`\n[${stepNum}/6] Scenario ${scenarioNum}: ${scenario.label}`);
+      console.log(`\n[${stepNum}/7] Scenario ${scenarioNum}: ${scenario.label}`);
 
-      // Get current transcript count before sending command
-      const countBefore = await getTranscriptCount(page);
+      // Bring sidepanel to front briefly to show typing
+      await sidepanel.bringToFront();
+      await sleep(500);
 
-      // Type the command
-      const textInput = page.getByRole("textbox", { name: "Type a command or question" });
+      // Get transcript count before command
+      const countBefore = await getTranscriptCount(sidepanel);
+
+      // Type the command (using Playwright API — doesn't change Chrome's active tab)
+      const textInput = sidepanel.getByRole("textbox", {
+        name: "Type a command or question",
+      });
       await textInput.fill("");
       await textInput.type(scenario.command, { delay: 40 });
       logTimestamp("typed_command", scenario.command);
       await sleep(500);
 
       // Screenshot of typed command
-      await page.screenshot({
-        path: path.join(OUTPUT_DIR, `${String(scenarioNum * 2 + 1).padStart(2, "0")}-typed-${scenarioNum}.png`),
+      await sidepanel.screenshot({
+        path: path.join(
+          OUTPUT_DIR,
+          `${String(scenarioNum * 2 + 1).padStart(2, "0")}-typed-${scenarioNum}.png`
+        ),
       });
 
       // Send the command
-      await page.getByRole("button", { name: "Send message" }).click();
+      await sidepanel.getByRole("button", { name: "Send message" }).click();
       logTimestamp("command_sent", scenario.label);
-      console.log(`  Command sent, waiting for AI response...`);
+      console.log("  Command sent, waiting for AI response...");
 
-      // Wait for AI to fully respond
-      await waitForCompletion(page, countBefore, scenario.label);
+      // IMMEDIATELY switch to browsing tab so browse_website navigates it
+      await browsingPage.bringToFront();
 
-      // Take result screenshot
-      await page.screenshot({
-        path: path.join(OUTPUT_DIR, `${String(scenarioNum * 2 + 2).padStart(2, "0")}-result-${scenarioNum}.png`),
+      // Wait for AI to fully respond (poll sidepanel transcript from background)
+      await waitForCompletion(sidepanel, countBefore, scenario.label);
+
+      // Bring sidepanel back to front to show results
+      await sidepanel.bringToFront();
+      await sleep(1000);
+
+      // Screenshot of result
+      await sidepanel.screenshot({
+        path: path.join(
+          OUTPUT_DIR,
+          `${String(scenarioNum * 2 + 2).padStart(2, "0")}-result-${scenarioNum}.png`
+        ),
+      });
+
+      // Also screenshot the browsing tab to show the site
+      await browsingPage.bringToFront();
+      await sleep(500);
+      await browsingPage.screenshot({
+        path: path.join(
+          OUTPUT_DIR,
+          `${String(scenarioNum * 2 + 2).padStart(2, "0")}b-browse-${scenarioNum}.png`
+        ),
       });
       logTimestamp("screenshot_taken", `result-${scenarioNum}`);
-
       console.log(`  Scenario ${scenarioNum} complete!`);
 
-      // Pause between scenarios (let viewer absorb results)
+      // Pause between scenarios
       if (i < SCENARIOS.length - 1) {
+        // Show sidepanel for the pause
+        await sidepanel.bringToFront();
         console.log("  Pausing before next scenario...");
         await sleep(5000);
+        // Switch back to browsing tab for next scenario's navigation
+        await browsingPage.bringToFront();
       }
     }
 
     // Final state
-    console.log("\n[6/6] Capturing final state...");
+    console.log("\n[7/7] Capturing final state...");
+    await sidepanel.bringToFront();
     await sleep(3000);
-    await page.screenshot({ path: path.join(OUTPUT_DIR, "99-final.png") });
+    await sidepanel.screenshot({ path: path.join(OUTPUT_DIR, "99-final.png") });
     logTimestamp("recording_done");
-
   } catch (error) {
     console.error(`Error during recording: ${error.message}`);
     logTimestamp("error", error.message);
-    await page.screenshot({ path: path.join(OUTPUT_DIR, "error-crash.png") });
+    await sidepanel.screenshot({ path: path.join(OUTPUT_DIR, "error-crash.png") }).catch(() => {});
   } finally {
-    // Close page and context to finalize the video
-    await page.close();
+    // Close to finalize video
+    await sidepanel.close();
+    await browsingPage.close();
     await context.close();
-    await browser.close();
 
     // Save timestamps
     fs.writeFileSync(TIMESTAMPS_FILE, JSON.stringify(timestamps, null, 2));
     console.log(`\nTimestamps saved to ${TIMESTAMPS_FILE}`);
 
-    // Print timestamp summary
+    // Print summary
     console.log("\n=== Timestamp Summary ===");
     for (const ts of timestamps) {
       console.log(`  ${ts.time}s - ${ts.event}${ts.detail ? " (" + ts.detail + ")" : ""}`);
     }
 
-    // Find the recorded video file
-    const files = fs.readdirSync(OUTPUT_DIR).filter((f) => f.endsWith(".webm"));
-    if (files.length > 0) {
-      // Rename to consistent filename
-      const latestVideo = path.join(OUTPUT_DIR, files[files.length - 1]);
+    // Find and rename video
+    const videos = fs.readdirSync(OUTPUT_DIR).filter((f) => f.endsWith(".webm"));
+    if (videos.length > 0) {
+      const latestVideo = path.join(OUTPUT_DIR, videos[videos.length - 1]);
       const targetName = path.join(OUTPUT_DIR, "accessvoice-demo.webm");
       if (latestVideo !== targetName) {
         if (fs.existsSync(targetName)) fs.unlinkSync(targetName);
@@ -273,12 +336,17 @@ async function run() {
       const stats = fs.statSync(targetName);
       console.log(`\n=== Recording Complete ===`);
       console.log(`Video: ${targetName} (${(stats.size / 1024 / 1024).toFixed(1)} MB)`);
-      console.log(`Screenshots: ${fs.readdirSync(OUTPUT_DIR).filter((f) => f.endsWith(".png")).length} PNG files`);
+      console.log(
+        `Screenshots: ${fs.readdirSync(OUTPUT_DIR).filter((f) => f.endsWith(".png")).length} PNG files`
+      );
       console.log(`Duration: ~${elapsed()}s`);
       console.log(`\nNext step: node generate_narration.mjs`);
     } else {
-      console.log("\nWARNING: No video file found in output directory");
+      console.log("\nWARNING: No video file found");
     }
+
+    // Cleanup temp profile
+    fs.rmSync(userDataDir, { recursive: true, force: true });
   }
 }
 

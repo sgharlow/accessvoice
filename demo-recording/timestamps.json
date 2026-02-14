@@ -1,102 +1,87 @@
 [
   {
     "event": "page_loaded",
-    "time": 9.5,
+    "time": 5,
     "detail": ""
   },
   {
     "event": "connected",
-    "time": 9.5,
+    "time": 5.1,
     "detail": ""
   },
   {
     "event": "session_start_clicked",
-    "time": 11.7,
+    "time": 7.2,
     "detail": ""
   },
   {
     "event": "session_ready",
-    "time": 16.8,
+    "time": 12.3,
     "detail": ""
   },
   {
     "event": "typed_command",
-    "time": 19.8,
+    "time": 16.2,
     "detail": "Search for 2 bedroom apartments in Seattle on Apartments.com"
   },
   {
     "event": "command_sent",
-    "time": 20.4,
-    "detail": "Apartments.com Search"
-  },
-  {
-    "event": "first_response",
-    "time": 35.5,
+    "time": 16.8,
     "detail": "Apartments.com Search"
   },
   {
     "event": "scenario_complete",
-    "time": 50.6,
+    "time": 46.9,
     "detail": "2 entries"
   },
   {
     "event": "screenshot_taken",
-    "time": 50.7,
+    "time": 49.1,
     "detail": "result-1"
   },
   {
     "event": "typed_command",
-    "time": 57.6,
+    "time": 56.6,
     "detail": "Find a winter jacket on Amazon under $100"
   },
   {
     "event": "command_sent",
-    "time": 58.3,
-    "detail": "Amazon Shopping"
-  },
-  {
-    "event": "first_response",
-    "time": 190.7,
+    "time": 57.3,
     "detail": "Amazon Shopping"
   },
   {
     "event": "scenario_complete",
-    "time": 217.8,
-    "detail": "3 entries"
+    "time": 138.5,
+    "detail": "6 entries"
   },
   {
     "event": "screenshot_taken",
-    "time": 217.9,
+    "time": 140.9,
     "detail": "result-2"
   },
   {
     "event": "typed_command",
-    "time": 224.3,
+    "time": 147.9,
     "detail": "What's the latest news on CNN?"
   },
   {
     "event": "command_sent",
-    "time": 225,
-    "detail": "CNN News"
-  },
-  {
-    "event": "first_response",
-    "time": 228,
+    "time": 148.5,
     "detail": "CNN News"
   },
   {
     "event": "scenario_complete",
-    "time": 243.1,
+    "time": 166.6,
     "detail": "2 entries"
   },
   {
     "event": "screenshot_taken",
-    "time": 243.2,
+    "time": 168.4,
     "detail": "result-3"
   },
   {
     "event": "recording_done",
-    "time": 246.4,
+    "time": 171.6,
     "detail": ""
   }
 ]

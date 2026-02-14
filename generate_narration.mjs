@@ -28,92 +28,84 @@ const VOICE = "en-US-AndrewNeural";
  * Narration segments timed to actual recording timestamps.
  *
  * Recording timeline (from timestamps.json):
- *   0-10s:   Page load + connect
- *   12-17s:  Session start
- *   20-51s:  Scenario 1 — Apartments.com (command at 20s, response at 35s, done at 51s)
- *   58-218s: Scenario 2 — Amazon (command at 58s, response at 191s, done at 218s)
- *   225-243s: Scenario 3 — CNN (command at 225s, response at 228s, done at 243s)
- *   246-250s: Final state
+ *   0-5s:    Page load + connect
+ *   7-12s:   Session start
+ *   16-47s:  Scenario 1 — Apartments (command at 16s, done at 47s)
+ *   57-139s: Scenario 2 — Amazon (command at 57s, done at 139s)
+ *   148-167s: Scenario 3 — CNN (command at 148s, done at 167s)
+ *   172s:    Final state
  */
 const SEGMENTS = [
   // --- Intro (during page load) ---
   {
-    startSec: 1,
+    startSec: 0,
     text: `This is AccessVoice — a voice-driven web browser built for accessibility.`,
   },
   {
     startSec: 6,
-    text: `It lets visually impaired users browse the internet through natural conversation, powered by three Amazon Nova models.`,
+    text: `It lets visually impaired users browse the internet through natural conversation, powered by Amazon Nova models.`,
   },
 
   // --- Session start ---
   {
-    startSec: 13,
-    text: `We're starting a voice session. The system connects to Nova Sonic for bidirectional audio streaming.`,
+    startSec: 14,
+    text: `We're starting a voice session. The system connects to Nova Sonic for real-time bidirectional audio streaming.`,
   },
 
-  // --- Scenario 1: Apartments.com ---
+  // --- Scenario 1: Apartments ---
   {
-    startSec: 20,
-    text: `Our first scenario: searching for apartments on Apartments dot com. We type the command — in production, this would be spoken aloud.`,
+    startSec: 22,
+    text: `Our first scenario: searching for apartments in Seattle. We type the command — in production, this would be spoken aloud.`,
   },
   {
     startSec: 30,
-    text: `Nova Act launches a real Chrome browser, navigates to the website, and performs the search autonomously.`,
+    text: `The Chrome extension captures your browser, navigates to the website, and performs the search — all autonomously.`,
   },
   {
-    startSec: 40,
-    text: `The browser screenshot streams back in real time. The AI responds with a voice summary of the results.`,
+    startSec: 38,
+    text: `Nova Lite analyzes the page screenshot and provides an accessible summary of the search results.`,
   },
 
   // --- Scenario 2: Amazon ---
   {
-    startSec: 55,
+    startSec: 50,
     text: `Scenario two: shopping on Amazon. We ask AccessVoice to find a winter jacket under one hundred dollars.`,
   },
   {
-    startSec: 65,
-    text: `Nova Act is now navigating to Amazon. It types the search query and browses results just like a human would.`,
+    startSec: 60,
+    text: `The extension navigates to Amazon. Nova Lite plans each action — clicking, typing, scrolling — just like a human would.`,
   },
   {
-    startSec: 80,
-    text: `Behind the scenes, Nova Sonic handles the voice conversation while Nova Act controls the browser. These two models work together in real time.`,
+    startSec: 75,
+    text: `Behind the scenes, Nova Sonic handles the voice conversation while the extension controls the browser. These models work together in real time.`,
   },
   {
-    startSec: 100,
-    text: `The browser automation runs in a real Chrome instance. Every click, scroll, and search is performed by Nova Act autonomously.`,
+    startSec: 95,
+    text: `The automation runs right in your own Chrome browser. No separate server-side browser needed. This means no bot detection issues.`,
   },
   {
-    startSec: 120,
-    text: `Notice the conversation transcript on the right — it provides a text alternative for accessibility, ensuring the experience works for all users.`,
+    startSec: 115,
+    text: `Notice the conversation transcript — it provides a text alternative, ensuring the experience works for all users.`,
   },
   {
-    startSec: 145,
-    text: `Nova Act is filtering the search results. The entire interaction happens through natural language — no manual navigation required.`,
-  },
-  {
-    startSec: 170,
-    text: `Once Nova Act completes the browsing, Nova Lite analyzes the page screenshot and generates an accessible summary.`,
-  },
-  {
-    startSec: 195,
-    text: `The AI is now summarizing the results it found. AccessVoice converts this into a spoken response for the user.`,
+    startSec: 130,
+    text: `The AI is summarizing the results. AccessVoice converts this into a spoken response.`,
   },
 
   // --- Scenario 3: CNN ---
   {
-    startSec: 222,
-    text: `Final scenario: reading the news on CNN. AccessVoice works across different types of websites.`,
+    startSec: 145,
+    text: `Final scenario: reading the news on CNN. AccessVoice works across any website — shopping, real estate, news.`,
   },
   {
-    startSec: 232,
+    startSec: 155,
     text: `Nova Lite analyzes the page and provides accessibility-friendly descriptions of the content.`,
   },
 
   // --- Outro ---
   {
-    startSec: 242,
-    text: `AccessVoice — making the web accessible through voice. Built with Amazon Nova Sonic, Nova Act, and Nova Lite. Thank you for watching.`,
+    startSec: 165,
+    text: `AccessVoice — making the web accessible through voice. Built with Amazon Nova Sonic and Nova Lite, as a Chrome extension. Thank you for watching.`,
   },
 ];
 
