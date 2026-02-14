@@ -22,22 +22,6 @@ AUDIO_SAMPLE_RATE = 16000
 AUDIO_CHANNELS = 1
 AUDIO_FORMAT = "pcm"  # 16kHz, 16-bit, mono PCM
 
-# Nova Act
-NOVA_ACT_API_KEY = os.getenv("NOVA_ACT_API_KEY", "")
-
-# Optional residential proxy for Nova Act browser (bypasses cloud IP bot detection)
-# Format: PROXY_SERVER=http://proxy.example.com:8080
-#         PROXY_USERNAME=user  PROXY_PASSWORD=pass
-PROXY_SERVER = os.getenv("PROXY_SERVER", "")
-PROXY_USERNAME = os.getenv("PROXY_USERNAME", "")
-PROXY_PASSWORD = os.getenv("PROXY_PASSWORD", "")
-NOVA_ACT_PROXY = None
-if PROXY_SERVER:
-    NOVA_ACT_PROXY = {"server": PROXY_SERVER}
-    if PROXY_USERNAME:
-        NOVA_ACT_PROXY["username"] = PROXY_USERNAME
-        NOVA_ACT_PROXY["password"] = PROXY_PASSWORD
-
 # Server
 BACKEND_PORT = int(os.getenv("BACKEND_PORT", "8000"))
 FRONTEND_PORT = int(os.getenv("FRONTEND_PORT", "5173"))
@@ -47,8 +31,9 @@ CORS_ORIGINS = [
     "http://localhost:3000",
     os.getenv("PRODUCTION_URL", ""),
 ]
-# Filter empty strings
+# Chrome extension origins
 CORS_ORIGINS = [o for o in CORS_ORIGINS if o]
+# Allow all chrome-extension:// origins (matched by pattern, not listed here)
 
 # Session limits
 MAX_CONCURRENT_SESSIONS = 3
@@ -89,7 +74,5 @@ Accessibility guidelines:
 - Always tell the user what's happening: "I'm clicking on that now..." or "The page is loading..."
 
 Tools:
-- browse_website: Go to a URL and perform actions (click, type, scroll)
-- read_page: Get an accessibility-friendly summary of what's on screen
-- refine_search: Change filters or search criteria on the current page
-- navigate_back: Return to the previous page"""
+- browse_website: Go to a URL and perform actions (click, type, scroll). Uses your browser directly.
+- read_page: Get an accessibility-friendly summary of what's on screen"""

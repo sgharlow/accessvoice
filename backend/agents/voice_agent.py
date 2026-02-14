@@ -28,10 +28,8 @@ from config import (
     AUDIO_FORMAT,
     SYSTEM_PROMPT,
 )
-from tools.browse_website import browse_website
+from tools.browse_extension import browse_website
 from tools.read_page import read_page
-from tools.refine_search import refine_search
-from tools.navigate_back import navigate_back
 
 logger = logging.getLogger("accessvoice.voice")
 
@@ -39,8 +37,6 @@ logger = logging.getLogger("accessvoice.voice")
 _TOOL_LABELS = {
     "browse_website": "Browsing the web",
     "read_page": "Reading the page",
-    "refine_search": "Adjusting search",
-    "navigate_back": "Going back",
     "stop_conversation": "Ending conversation",
 }
 
@@ -66,6 +62,19 @@ class VoiceAgent:
         self._closed = False
         self._last_activity = time.monotonic()
 
+        import threading
+
+        # Extension communication channels
+        self._emit_to_client = None  # Set by main.py before start()
+        self._screenshot_response = {
+            "event": threading.Event(),
+            "data": {},
+        }
+        self._action_response = {
+            "event": threading.Event(),
+            "data": {},
+        }
+
         # Pre-compute a 100ms silent audio frame (16kHz, 16-bit mono = 3200 bytes)
         self._silence_b64 = base64.b64encode(b"\x00" * 3200).decode("utf-8")
 
@@ -90,10 +99,10 @@ class VoiceAgent:
             },
         )
 
-        # Build the BidiAgent with all 4 tools
+        # Build the BidiAgent with tools
         self._agent = BidiAgent(
             model=self._model,
-            tools=[browse_website, read_page, refine_search, navigate_back, stop_conversation],
+            tools=[browse_website, read_page, stop_conversation],
             system_prompt=SYSTEM_PROMPT,
         )
 
@@ -111,6 +120,9 @@ class VoiceAgent:
                 "session_id": self.session_id,
                 "on_screenshot": self._on_screenshot,
                 "on_status": self._on_status,
+                "emit_to_client": self._emit_to_client,
+                "screenshot_response": self._screenshot_response,
+                "action_response": self._action_response,
             })
             # Spawn background receive loop and audio keepalive
             self._receive_task = asyncio.create_task(self._event_loop())
@@ -231,11 +243,24 @@ class VoiceAgent:
         except Exception as e:
             logger.error(f"Error sending text: {e}")
 
+    def set_emit_to_client(self, emit_fn):
+        """Set the emit_to_client function (called by main.py before start)."""
+        self._emit_to_client = emit_fn
+
+    def on_page_screenshot(self, data):
+        """Handle page_screenshot event from extension."""
+        self._screenshot_response["data"] = data
+        self._screenshot_response["event"].set()
+
+    def on_action_result(self, data):
+        """Handle action_result event from extension."""
+        self._action_response["data"] = data
+        self._action_response["event"].set()
+
     async def close(self) -> None:
         """Clean up the voice session."""
         self._closed = True
 
-        # Cancel background tasks
         for task in (self._keepalive_task, self._receive_task):
             if task and not task.done():
                 task.cancel()
@@ -244,14 +269,9 @@ class VoiceAgent:
                 except asyncio.CancelledError:
                     pass
 
-        # Stop the BidiAgent
         try:
             await self._agent.stop()
         except Exception as e:
             logger.error(f"Error stopping BidiAgent: {e}")
-
-        # Clean up browser session (may block — run in thread)
-        from tools.browse_website import cleanup_browser
-        await asyncio.to_thread(cleanup_browser, self.session_id)
 
         logger.info(f"Voice agent closed for session {self.session_id}")

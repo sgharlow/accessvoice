@@ -112,6 +112,9 @@ async def start_session(sid: str, data: dict):
             ),
         )
 
+        # Set up extension communication channel
+        voice_agent.set_emit_to_client(_emit_threadsafe)
+
         # Start the BidiAgent (connects to Nova Sonic, spawns event loop)
         await voice_agent.start()
 
@@ -157,6 +160,24 @@ async def text_input(sid: str, data: dict):
     text = data.get("text", "")
     if text:
         await session["agent"].send_text(text)
+
+
+@sio.event
+async def page_screenshot(sid: str, data: dict):
+    """Extension sends a screenshot of the current tab."""
+    session = sessions.get_by_sid(sid)
+    if not session:
+        return
+    session["agent"].on_page_screenshot(data)
+
+
+@sio.event
+async def action_result(sid: str, data: dict):
+    """Extension reports result of a DOM action."""
+    session = sessions.get_by_sid(sid)
+    if not session:
+        return
+    session["agent"].on_action_result(data)
 
 
 # -- Mount Socket.IO on FastAPI ------------------------------------------------
