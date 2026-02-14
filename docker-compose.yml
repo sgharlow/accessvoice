@@ -10,7 +10,6 @@ services:
     volumes:
       - ./backend:/app
     restart: unless-stopped
-    shm_size: "2gb"  # Chrome needs shared memory
 
   frontend:
     image: node:20-slim
