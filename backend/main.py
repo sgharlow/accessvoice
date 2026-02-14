@@ -32,7 +32,7 @@ app.add_middleware(
 # Socket.IO server
 sio = socketio.AsyncServer(
     async_mode="asgi",
-    cors_allowed_origins=CORS_ORIGINS,
+    cors_allowed_origins="*",  # Accept chrome-extension:// + localhost origins
     max_http_buffer_size=10 * 1024 * 1024,  # 10MB for screenshots
 )
 socket_app = socketio.ASGIApp(sio, app)

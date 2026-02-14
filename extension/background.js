@@ -38,15 +38,15 @@ function connectToBackend() {
     broadcastToSidepanel({ type: "connection_status", connected: false });
   });
 
-  // Forward server events to sidepanel
-  for (const event of ["transcript", "audio", "status", "screenshot",
+  // Forward server events to sidepanel (audio handled separately below)
+  for (const event of ["transcript", "status", "screenshot",
                         "session_started", "session_stopped", "error"]) {
     socket.on(event, (data) => {
       broadcastToSidepanel({ type: event, data });
     });
   }
 
-  // Handle audio events — forward to offscreen document for playback
+  // Audio events — forward to offscreen document for playback
   socket.on("audio", (data) => {
     chrome.runtime.sendMessage({ type: "play_audio", data: data.audio || data.data });
   });
@@ -137,4 +137,13 @@ chrome.action.onClicked.addListener((tab) => {
 // Configure on install
 chrome.runtime.onInstalled.addListener(() => {
   chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+  // Keepalive alarm to prevent service worker idle termination
+  chrome.alarms.create("keepalive", { periodInMinutes: 1 });
+});
+
+// Keepalive — prevent Chrome from killing the service worker after 5min idle
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === "keepalive" && socket?.connected) {
+    // Ping keeps the service worker alive
+  }
 });

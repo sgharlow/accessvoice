@@ -123,13 +123,13 @@ function findElement(params) {
     return result.singleNodeValue;
   }
   if (params.ariaLabel) {
-    return document.querySelector(`[aria-label="${params.ariaLabel}"]`);
+    return document.querySelector(`[aria-label="${CSS.escape(params.ariaLabel)}"]`);
   }
   if (params.placeholder) {
-    return document.querySelector(`[placeholder="${params.placeholder}"]`);
+    return document.querySelector(`[placeholder="${CSS.escape(params.placeholder)}"]`);
   }
   if (params.name) {
-    return document.querySelector(`[name="${params.name}"]`);
+    return document.querySelector(`[name="${CSS.escape(params.name)}"]`);
   }
   return null;
 }

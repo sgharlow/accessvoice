@@ -31,9 +31,8 @@ CORS_ORIGINS = [
     "http://localhost:3000",
     os.getenv("PRODUCTION_URL", ""),
 ]
-# Chrome extension origins
 CORS_ORIGINS = [o for o in CORS_ORIGINS if o]
-# Allow all chrome-extension:// origins (matched by pattern, not listed here)
+# Socket.IO uses "*" to accept chrome-extension:// origins (set in main.py)
 
 # Session limits
 MAX_CONCURRENT_SESSIONS = 3

@@ -15,6 +15,24 @@ logger = logging.getLogger("accessvoice.tools.read_page")
 # Timeout for Bedrock vision call (seconds)
 _VISION_TIMEOUT = 30
 
+# Cached Bedrock client (singleton)
+_bedrock_client = None
+
+
+def _get_bedrock():
+    global _bedrock_client
+    if _bedrock_client is None:
+        _bedrock_client = boto3.client(
+            "bedrock-runtime",
+            region_name=NOVA_LITE_REGION,
+            config=BotoConfig(
+                read_timeout=_VISION_TIMEOUT,
+                connect_timeout=10,
+                retries={"max_attempts": 2, "mode": "adaptive"},
+            ),
+        )
+    return _bedrock_client
+
 VISION_PROMPT = """You are an accessibility assistant helping a visually impaired user understand a web page.
 
 Analyze this screenshot and provide a clear, structured summary:
@@ -76,16 +94,8 @@ def read_page(focus: str = "main content", tool_context: ToolContext = None) -> 
         if on_status:
             on_status("Analyzing page content...")
 
-        # Send to Nova 2 Lite for vision analysis (us-west-2) with timeout
-        bedrock = boto3.client(
-            "bedrock-runtime",
-            region_name=NOVA_LITE_REGION,
-            config=BotoConfig(
-                read_timeout=_VISION_TIMEOUT,
-                connect_timeout=10,
-                retries={"max_attempts": 2, "mode": "adaptive"},
-            ),
-        )
+        # Send to Nova 2 Lite for vision analysis (us-west-2)
+        bedrock = _get_bedrock()
 
         response = bedrock.converse(
             modelId=NOVA_LITE_MODEL_ID,

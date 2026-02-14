@@ -3641,7 +3641,6 @@ var require_background = __commonJS({
       });
       for (const event of [
         "transcript",
-        "audio",
         "status",
         "screenshot",
         "session_started",
@@ -3733,6 +3732,11 @@ var require_background = __commonJS({
     });
     chrome.runtime.onInstalled.addListener(() => {
       chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+      chrome.alarms.create("keepalive", { periodInMinutes: 1 });
+    });
+    chrome.alarms.onAlarm.addListener((alarm) => {
+      if (alarm.name === "keepalive" && socket?.connected) {
+      }
     });
   }
 });

@@ -24,7 +24,7 @@ export default defineConfig({
   base: "./",
   build: {
     outDir: path.resolve(__dirname, "../extension/sidepanel"),
-    emptyDir: true,
+    emptyOutDir: true,
     rollupOptions: {
       input: {
         "index.extension": path.resolve(__dirname, "index.extension.html"),
