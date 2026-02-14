@@ -6,7 +6,6 @@ services:
     env_file:
       - .env
     restart: unless-stopped
-    shm_size: "2gb"
 
   nginx:
     build:

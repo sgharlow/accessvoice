@@ -62,7 +62,7 @@ This vision-based action planning approach means the system works on any website
 **Production-grade engineering:**
 - Automatic session cleanup on disconnect or idle timeout (10-minute window)
 - Graceful error handling with user-friendly spoken status messages
-- ARIA-compliant frontend with keyboard shortcuts (Ctrl+Shift+S/M/T), WCAG-audited with 0 violations (38 axe-core rules)
+- ARIA-compliant frontend with keyboard shortcuts (Ctrl+Shift+S/M/T), semantic HTML roles, and WCAG accessibility best practices
 - Comprehensive E2E test suite: session lifecycle, concurrent sessions, error recovery, vision analysis, and 3 real-site demo scenarios
 - Extension works in headed Chrome — no headless mode, no virtual displays, no Docker required for browser
 

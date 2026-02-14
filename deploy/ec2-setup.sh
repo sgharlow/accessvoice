@@ -48,7 +48,6 @@ if [ ! -f "$APP_DIR/.env" ]; then
     echo "Required variables:"
     echo "  AWS_ACCESS_KEY_ID"
     echo "  AWS_SECRET_ACCESS_KEY"
-    echo "  NOVA_ACT_API_KEY"
     echo ""
     read -rp "Press Enter after editing .env to continue (or Ctrl+C to exit)..."
 fi

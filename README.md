@@ -124,7 +124,7 @@ node tests/test_cnn.mjs                  # CNN news scenario
 node test_zillow.mjs                     # Zillow apartment search
 ```
 
-Accessibility audit: 0 WCAG violations verified via axe-core (38 rules checked).
+The frontend follows WCAG accessibility best practices with ARIA roles, labels, and keyboard navigation throughout.
 
 ## Keyboard Shortcuts
 
@@ -140,7 +140,7 @@ Accessibility audit: 0 WCAG violations verified via axe-core (38 rules checked).
 - **Backend**: Python 3.12, FastAPI, python-socketio, Strands SDK, boto3
 - **Frontend**: React 18, TypeScript, Vite, Socket.IO client
 - **AI Models**: Amazon Nova 2 Sonic, Nova 2 Lite (via AWS Bedrock)
-- **Testing**: Custom E2E suite (Socket.IO + Playwright), axe-core accessibility audit
+- **Testing**: Custom E2E suite (Socket.IO-based), Playwright (demo recording)
 
 ## Project Structure
 
@@ -167,8 +167,10 @@ accessvoice/
 │   │   ├── hooks/                 # useSocketIO (dual-mode), useAudioStream
 │   │   └── App.tsx                # Main app with AudioQueue playback
 │   └── index.extension.html       # Extension entry point
-├── tests/                         # E2E test suite (7 test files)
+├── tests/                         # E2E test suite (6 test files)
+├── deploy/                        # EC2 deployment (Nginx, Dockerfile, setup script)
 ├── demo-recording/                # Recorded demo video + narration
+├── docs/plans/                    # Implementation plans
 └── .env.example
 ```
 

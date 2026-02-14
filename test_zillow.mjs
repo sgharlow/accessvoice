@@ -2,8 +2,8 @@
  * AccessVoice Zillow E2E Test — tests the primary demo scenario:
  * "Search for 3 bedroom apartments in Seattle under $2000 on Zillow"
  *
- * This hits a real website (Zillow) from a residential IP to verify
- * Nova Act can navigate commercial sites without being blocked.
+ * This hits a real website (Zillow) to verify the Chrome Extension
+ * can navigate commercial sites without being blocked.
  *
  * Usage: node test_zillow.mjs [timeout_seconds]
  */
