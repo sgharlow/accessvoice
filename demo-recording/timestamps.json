@@ -1,0 +1,102 @@
+[
+  {
+    "event": "page_loaded",
+    "time": 9.5,
+    "detail": ""
+  },
+  {
+    "event": "connected",
+    "time": 9.5,
+    "detail": ""
+  },
+  {
+    "event": "session_start_clicked",
+    "time": 11.7,
+    "detail": ""
+  },
+  {
+    "event": "session_ready",
+    "time": 16.8,
+    "detail": ""
+  },
+  {
+    "event": "typed_command",
+    "time": 19.8,
+    "detail": "Search for 2 bedroom apartments in Seattle on Apartments.com"
+  },
+  {
+    "event": "command_sent",
+    "time": 20.4,
+    "detail": "Apartments.com Search"
+  },
+  {
+    "event": "first_response",
+    "time": 35.5,
+    "detail": "Apartments.com Search"
+  },
+  {
+    "event": "scenario_complete",
+    "time": 50.6,
+    "detail": "2 entries"
+  },
+  {
+    "event": "screenshot_taken",
+    "time": 50.7,
+    "detail": "result-1"
+  },
+  {
+    "event": "typed_command",
+    "time": 57.6,
+    "detail": "Find a winter jacket on Amazon under $100"
+  },
+  {
+    "event": "command_sent",
+    "time": 58.3,
+    "detail": "Amazon Shopping"
+  },
+  {
+    "event": "first_response",
+    "time": 190.7,
+    "detail": "Amazon Shopping"
+  },
+  {
+    "event": "scenario_complete",
+    "time": 217.8,
+    "detail": "3 entries"
+  },
+  {
+    "event": "screenshot_taken",
+    "time": 217.9,
+    "detail": "result-2"
+  },
+  {
+    "event": "typed_command",
+    "time": 224.3,
+    "detail": "What's the latest news on CNN?"
+  },
+  {
+    "event": "command_sent",
+    "time": 225,
+    "detail": "CNN News"
+  },
+  {
+    "event": "first_response",
+    "time": 228,
+    "detail": "CNN News"
+  },
+  {
+    "event": "scenario_complete",
+    "time": 243.1,
+    "detail": "2 entries"
+  },
+  {
+    "event": "screenshot_taken",
+    "time": 243.2,
+    "detail": "result-3"
+  },
+  {
+    "event": "recording_done",
+    "time": 246.4,
+    "detail": ""
+  }
+]
