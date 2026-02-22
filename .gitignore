@@ -26,3 +26,15 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Submission docs (contain project-specific metadata, not source code)
+docs/submission-checklist.md
+docs/hackathon-submission-metadata.txt
+docs/feedback-survey-responses.md
+docs/screenshots-and-video.md
+
+# Screenshots (uploaded separately to Devpost)
+screenshots/
+
+# Build artifacts
+frontend/tsconfig.tsbuildinfo

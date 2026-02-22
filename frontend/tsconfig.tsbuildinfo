@@ -1,1 +1,0 @@
-{"root":["./src/app.tsx","./src/main.tsx","./src/vite-env.d.ts","./src/components/browserview.tsx","./src/components/statusindicator.tsx","./src/components/textinput.tsx","./src/components/transcriptpanel.tsx","./src/components/voicecontrols.tsx","./src/hooks/useaudiostream.ts","./src/hooks/usesocketio.ts"],"version":"5.9.3"}
