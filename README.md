@@ -1,3 +1,5 @@
+> 📦 **Archived** — Voice-driven web browsing for visually impaired users (hackathon build), early 2026. Not maintained. Code and history remain browsable. Sibling: accessbrowse.
+
 # AccessVoice — Voice-Driven Web Browser for Accessibility
 
 AccessVoice lets visually impaired users browse the web through natural voice conversation. Instead of navigating with a screen reader and keyboard shortcuts, users simply say what they want — "Search for apartments in Seattle" — and AccessVoice handles the browsing, reading, and navigation automatically.
